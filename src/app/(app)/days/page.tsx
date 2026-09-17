@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getTz, requestNow } from "@/lib/tz";
-import { addDays, dayBoundsMs, formatDay, formatDuration, formatTime, localDay } from "@/lib/time";
+import { addDays, dayBoundsMs, formatDay, formatDuration, localDay } from "@/lib/time";
 import {
   clipActions,
   minutesByName,
+  packLanes,
   painSeries,
   painStats,
   pct,
@@ -15,13 +16,40 @@ import {
 } from "@/lib/day";
 import { ACTIVE_CATEGORIES, SEDENTARY_CATEGORIES } from "@/lib/categories";
 import type { PainEvent } from "@/lib/database.types";
-import { PainBadge } from "@/components/pain-badge";
+import { PainBadge, painColor } from "@/components/pain-badge";
+import { ScrollEnd } from "./scroll-end";
 
-const RANGES = [7, 30, 90] as const;
+// 7d → one row of 7 · 30d → one row of 30 · 90d → three rows of 30.
+const LAYOUTS = {
+  7: { perRow: 7, size: "lg" },
+  30: { perRow: 30, size: "md" },
+  90: { perRow: 30, size: "sm" },
+} as const;
+type Range = keyof typeof LAYOUTS;
+type Size = (typeof LAYOUTS)[Range]["size"];
+const RANGES = Object.keys(LAYOUTS).map(Number) as Range[];
+
+const SIZES: Record<Size, { header: string; strip: number; minCol: string }> = {
+  lg: { header: "h-11", strip: 240, minCol: "7.5rem" },
+  md: { header: "h-10", strip: 200, minCol: "1.75rem" },
+  sm: { header: "h-8", strip: 96, minCol: "1.75rem" },
+};
+
+type DayInfo = {
+  day: string;
+  span: Span;
+  until: number;
+  actions: ClippedAction[];
+  points: PainPoint[];
+  events: PainEvent[];
+  stats: ReturnType<typeof painStats>;
+  empty: boolean;
+};
 
 export default async function AllDaysPage({ searchParams }: PageProps<"/days">) {
   const { range: rangeParam } = await searchParams;
   const range = RANGES.find((r) => String(r) === rangeParam) ?? 30;
+  const { perRow, size } = LAYOUTS[range];
 
   const tz = await getTz();
   const now = await requestNow();
@@ -31,7 +59,7 @@ export default async function AllDaysPage({ searchParams }: PageProps<"/days">) 
   const rangeEnd = new Date(dayBoundsMs(tz, today).end).toISOString();
 
   const supabase = await createClient();
-  const [actions, levels, carry, events, types] = await Promise.all([
+  const [actions, levels, carry, events] = await Promise.all([
     supabase
       .from("actions")
       .select("*")
@@ -56,19 +84,17 @@ export default async function AllDaysPage({ searchParams }: PageProps<"/days">) 
       .gte("occurred_at", rangeStart)
       .lt("occurred_at", rangeEnd)
       .order("occurred_at"),
-    supabase.from("action_types").select("id, emoji"),
   ]);
 
   const allLevels = [...(carry.data ?? []), ...(levels.data ?? [])];
-  const emoji = new Map((types.data ?? []).map((t) => [t.id, t.emoji]));
 
-  const days = Array.from({ length: range }, (_, i) => addDays(today, -i)).map((day) => {
+  // Oldest → newest, like a calendar.
+  const days: DayInfo[] = Array.from({ length: range }, (_, i) => addDays(firstDay, i)).map((day) => {
     const { start, end } = dayBoundsMs(tz, day);
     const span = { startMs: start, endMs: end };
     const until = Math.min(end, now);
     const dayActions = clipActions(actions.data ?? [], span, now);
     const points = painSeries(allLevels, span);
-    const hasOwnReadings = points.some((p) => p.id !== null);
     const dayEvents = (events.data ?? []).filter((e) => {
       const t = new Date(e.occurred_at).getTime();
       return t >= start && t < end;
@@ -76,24 +102,32 @@ export default async function AllDaysPage({ searchParams }: PageProps<"/days">) 
     return {
       day,
       span,
+      until,
       actions: dayActions,
       points,
       events: dayEvents,
       stats: painStats(points, until),
-      until,
-      empty: dayActions.length === 0 && dayEvents.length === 0 && !hasOwnReadings,
+      empty: dayActions.length === 0 && dayEvents.length === 0 && !points.some((p) => p.id !== null),
     };
   });
 
-  const visible = days.filter((d) => !d.empty || d.day === today);
+  const rows = Array.from({ length: Math.ceil(days.length / perRow) }, (_, r) =>
+    days.slice(r * perRow, (r + 1) * perRow),
+  );
+  const logged = days.filter((d) => !d.empty);
+  const withPain = days.filter((d) => d.stats);
+  const rangeAvg = withPain.length
+    ? Math.round((withPain.reduce((s, d) => s + d.stats!.avg, 0) / withPain.length) * 10) / 10
+    : null;
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-3 py-5 sm:px-5">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">All days</h1>
           <p className="text-sm text-muted">
-            {visible.length} logged day{visible.length === 1 ? "" : "s"} in the last {range} days
+            {logged.length} of {range} days logged
+            {rangeAvg !== null && ` · average pain ${rangeAvg}`}
           </p>
         </div>
         <div className="flex gap-1 rounded-full bg-surface-2 p-1">
@@ -109,208 +143,249 @@ export default async function AllDaysPage({ searchParams }: PageProps<"/days">) 
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {visible.map((d) => (
-          <DayCard
-            key={d.day}
-            tz={tz}
-            isToday={d.day === today}
-            emojiFor={(id) => (id ? emoji.get(id) ?? null : null)}
-            {...d}
-          />
+      <Legend />
+
+      <div className="flex flex-col gap-4">
+        {rows.map((row) => (
+          <section key={row[0].day}>
+            {rows.length > 1 && (
+              <p className="mb-0.5 pl-9 text-xs font-medium text-muted">
+                {formatDay(row[0].day, { weekday: undefined })} – {formatDay(row.at(-1)!.day, { weekday: undefined })}
+              </p>
+            )}
+            <ScrollEnd className="py-1 pr-1">
+              <div className="flex gap-1.5" style={{ minWidth: "min-content" }}>
+                <HourAxis size={size} />
+                <div
+                  className="grid flex-1 gap-1"
+                  style={{ gridTemplateColumns: `repeat(${perRow}, minmax(${SIZES[size].minCol}, 1fr))` }}
+                >
+                  {row.map((d) => (
+                    <DayColumn key={d.day} info={d} size={size} isToday={d.day === today} now={now} />
+                  ))}
+                </div>
+              </div>
+            </ScrollEnd>
+          </section>
         ))}
       </div>
     </div>
   );
 }
 
-function DayCard({
-  tz,
-  day,
-  span,
-  actions,
-  points,
-  events,
-  stats,
-  until,
-  isToday,
-  emojiFor,
-}: {
-  tz: string;
-  day: string;
-  span: Span;
-  actions: ClippedAction[];
-  points: PainPoint[];
-  events: PainEvent[];
-  stats: ReturnType<typeof painStats>;
-  until: number;
-  isToday: boolean;
-  emojiFor: (id: string | null) => string | null;
-}) {
+function Legend() {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
+      <span className="flex items-center gap-1.5">
+        <span className="h-3 w-2 rounded-sm bg-accent" /> actions (left)
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-3 w-2 rounded-sm bg-linear-to-b from-(--pain-low) to-(--pain-max)" /> pain level (right)
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full border border-surface bg-(--pain-max)" /> pain event
+      </span>
+      <span>top = 00:00 · bottom = 24:00 · hover a day for its summary</span>
+    </div>
+  );
+}
+
+function HourAxis({ size }: { size: Size }) {
+  const { header, strip } = SIZES[size];
+  const marks = size === "sm" ? [0, 12, 24] : [0, 6, 12, 18, 24];
+  return (
+    <div className="sticky left-0 z-10 w-6 shrink-0 bg-paper pt-0.5 text-[9px] text-muted tabular-nums">
+      <div className={header} />
+      <div className="relative" style={{ height: strip }}>
+        {marks.map((h) => (
+          <span
+            key={h}
+            className="absolute right-0 -translate-y-1/2 leading-none"
+            style={{ top: `${(h / 24) * 100}%` }}
+          >
+            {String(h).padStart(2, "0")}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function summary(info: DayInfo) {
+  const { actions, events, stats } = info;
   const sleep = totalMinutes(actions, (a) => a.category === "sleep");
   const active = totalMinutes(actions, (a) => ACTIVE_CATEGORIES.has(a.category));
-  const sedentary = totalMinutes(actions, (a) => SEDENTARY_CATEGORIES.has(a.category));
-  const byName = minutesByName(actions);
-  const eventCounts = new Map<string, { name: string; color: string; count: number; max: number | null }>();
-  for (const e of events) {
-    const cur = eventCounts.get(e.name) ?? { name: e.name, color: e.color, count: 0, max: null };
-    cur.count += 1;
-    if (e.intensity !== null) cur.max = Math.max(cur.max ?? 0, e.intensity);
-    eventCounts.set(e.name, cur);
-  }
+  const sitting = totalMinutes(actions, (a) => SEDENTARY_CATEGORIES.has(a.category));
+  const dur = (m: number) => (m >= 1 ? formatDuration(m * 60000) : "–");
+  const title = [
+    formatDay(info.day),
+    stats ? `pain avg ${stats.avg} (max ${stats.max})` : "no pain readings",
+    `sleep ${dur(sleep)}`,
+    `active ${dur(active)}`,
+    `sitting ${dur(sitting)}`,
+    `${events.length} pain event${events.length === 1 ? "" : "s"}`,
+    ...minutesByName(actions).map((a) => `• ${a.name} ${dur(a.minutes)}`),
+  ].join("\n");
+  return { sleep, active, sitting, dur, title };
+}
+
+function DayColumn({ info, size, isToday, now }: { info: DayInfo; size: Size; isToday: boolean; now: number }) {
+  const { day, span, until, actions, points, events, stats, empty } = info;
+  const { header, strip } = SIZES[size];
+  const s = summary(info);
+  const [y, m, d] = day.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(date);
+  const month = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(date);
+  const weekend = date.getUTCDay() === 0 || date.getUTCDay() === 6;
+  const lanes = packLanes(actions);
 
   return (
     <Link
       href={isToday ? "/" : `/day/${day}`}
-      className="card flex flex-col gap-3 transition hover:border-accent/60 hover:shadow-sm"
+      title={s.title}
+      className={`group flex min-w-0 flex-col rounded-lg p-0.5 transition hover:bg-surface-2 ${
+        isToday ? "ring-2 ring-accent" : ""
+      }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-semibold">
-            {formatDay(day)}
-            {isToday && (
-              <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-(--accent-ink) uppercase">
-                Today
-              </span>
-            )}
-          </p>
-          <p className="text-xs text-muted">
-            {actions.length} action{actions.length === 1 ? "" : "s"} · {events.length} pain event
-            {events.length === 1 ? "" : "s"}
-          </p>
-        </div>
-        {stats && (
-          <div className="flex items-center gap-2 text-right">
-            <div className="text-[10px] leading-tight text-muted">
-              avg
-              <br />
-              max {stats.max}
+      {/* header */}
+      <div className={`${header} flex flex-col items-center justify-center leading-none`}>
+        {size === "lg" ? (
+          <div className="flex w-full items-center justify-between px-1">
+            <div>
+              <p className={`text-[11px] ${weekend ? "text-accent" : "text-muted"}`}>{weekday}</p>
+              <p className="text-sm font-semibold">
+                {d} {month}
+              </p>
             </div>
-            <PainBadge value={Math.round(stats.avg)} size="lg" />
+            {stats ? <PainBadge value={Math.round(stats.avg)} /> : null}
           </div>
+        ) : (
+          <>
+            <span className={`text-[9px] ${weekend ? "text-accent" : "text-muted"}`}>
+              {d === 1 ? month : weekday.slice(0, size === "sm" ? 1 : 2)}
+            </span>
+            <span className={`font-semibold tabular-nums ${size === "sm" ? "text-[11px]" : "text-xs"}`}>{d}</span>
+            {size === "md" && (
+              <span
+                className="mt-0.5 h-1.5 w-full rounded-full"
+                style={{ background: stats ? painColor(Math.round(stats.avg)) : "var(--line)" }}
+              />
+            )}
+          </>
         )}
       </div>
 
-      <MiniTimeline span={span} actions={actions} points={points} events={events} until={until} />
+      {/* 24h strip: actions | pain */}
+      <div
+        className={`relative flex gap-px overflow-hidden rounded-md border border-line ${
+          empty ? "bg-surface-2/40" : "bg-surface"
+        }`}
+        style={{ height: strip }}
+      >
+        {/* 6h guide lines */}
+        {[6, 12, 18].map((h) => (
+          <span
+            key={h}
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 border-t border-line/70"
+            style={{ top: `${(h / 24) * 100}%` }}
+          />
+        ))}
 
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <Metric label="Sleep" minutes={sleep} />
-        <Metric label="Active" minutes={active} />
-        <Metric label="Sitting" minutes={sedentary} />
+        <div className="relative flex flex-3 gap-px">
+          {lanes.map((lane, i) => (
+            <div key={i} className="relative flex-1">
+              {lane.map((a) => (
+                <span
+                  key={a.id}
+                  className={`absolute inset-x-0 rounded-xs ${a.active ? "opacity-70" : ""}`}
+                  style={{
+                    top: `${pct(a.from, span)}%`,
+                    height: `max(${pct(a.to, span) - pct(a.from, span)}%, 1px)`,
+                    background: a.color,
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <div className="relative flex-2">
+          {points.map((p, i) => {
+            const to = Math.min(points[i + 1]?.at ?? until, until);
+            if (to <= p.at) return null;
+            return (
+              <span
+                key={p.id ?? `carry-${i}`}
+                className="absolute inset-x-0"
+                style={{
+                  top: `${pct(p.at, span)}%`,
+                  height: `${pct(to, span) - pct(p.at, span)}%`,
+                  background: painColor(p.level),
+                  opacity: 0.35 + p.level * 0.065,
+                }}
+              />
+            );
+          })}
+          {events.map((e) => (
+            <span
+              key={e.id}
+              className="absolute left-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-surface"
+              style={{ top: `${pct(new Date(e.occurred_at).getTime(), span)}%`, background: e.color }}
+            />
+          ))}
+        </div>
+
+        {isToday && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 border-t-2 border-(--pain-max)"
+            style={{ top: `${pct(now, span)}%` }}
+          />
+        )}
       </div>
 
-      {byName.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {byName.slice(0, 6).map((a) => (
-            <span key={a.name} className="flex items-center gap-1.5 rounded-full bg-surface-2 px-2 py-0.5 text-xs">
-              <span className="h-2 w-2 rounded-sm" style={{ background: a.color }} />
-              {a.name} {formatDuration(a.minutes * 60000)}
-              {a.count > 1 && <span className="text-muted">×{a.count}</span>}
-            </span>
-          ))}
+      {/* details (7-day view only) */}
+      {size === "lg" && (
+        <div className="mt-2 flex flex-col gap-1.5 px-1 text-[11px]">
+          <div className="grid grid-cols-3 gap-1 text-center">
+            <Metric label="Sleep" value={s.dur(s.sleep)} />
+            <Metric label="Active" value={s.dur(s.active)} />
+            <Metric label="Sit" value={s.dur(s.sitting)} />
+          </div>
+          {stats && (
+            <p className="text-muted">
+              pain avg <b className="text-ink">{stats.avg}</b> · max <b className="text-ink">{stats.max}</b>
+            </p>
+          )}
+          {minutesByName(actions)
+            .slice(0, 4)
+            .map((a) => (
+              <p key={a.name} className="flex items-center gap-1.5">
+                <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: a.color }} />
+                <span className="truncate">{a.name}</span>
+                <span className="ml-auto text-muted tabular-nums">{s.dur(a.minutes)}</span>
+              </p>
+            ))}
+          {events.length > 0 && (
+            <p className="flex items-center gap-1.5 text-muted">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-(--pain-max)" />
+              {events.length} pain event{events.length === 1 ? "" : "s"}
+            </p>
+          )}
+          {empty && <p className="text-muted">Nothing logged</p>}
         </div>
-      )}
-
-      {eventCounts.size > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {[...eventCounts.values()].map((e) => (
-            <span key={e.name} className="flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-xs">
-              <span className="h-2 w-2 rounded-full" style={{ background: e.color }} />
-              {e.name} ×{e.count}
-              {e.max !== null && <span className="text-muted">max {e.max}</span>}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {actions.length > 0 && (
-        <ul className="flex flex-col gap-0.5 border-t border-line pt-2 text-xs">
-          {actions.slice(0, 8).map((a) => (
-            <li key={a.id} className="flex gap-2">
-              <span className="w-[5.5rem] shrink-0 text-muted tabular-nums">
-                {formatTime(tz, a.from)}–{a.active ? "now" : formatTime(tz, a.to)}
-              </span>
-              <span className="truncate">
-                {emojiFor(a.type_id)} {a.name}
-              </span>
-              <span className="ml-auto text-muted tabular-nums">{formatDuration(a.to - a.from)}</span>
-            </li>
-          ))}
-          {actions.length > 8 && <li className="text-muted">+{actions.length - 8} more</li>}
-        </ul>
       )}
     </Link>
   );
 }
 
-function Metric({ label, minutes }: { label: string; minutes: number }) {
-  const value = minutes >= 1 ? formatDuration(minutes * 60000) : "–";
+function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-surface-2 px-2 py-1.5">
-      <p className="text-[10px] tracking-wider text-muted uppercase">{label}</p>
-      <p className="text-sm font-semibold tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-function MiniTimeline({
-  span,
-  actions,
-  points,
-  events,
-  until,
-}: {
-  span: Span;
-  actions: ClippedAction[];
-  points: PainPoint[];
-  events: PainEvent[];
-  until: number;
-}) {
-  const X = (ms: number) => pct(ms, span) * 10;
-  const Y = (l: number) => 28 - l * 2.6;
-  let path = "";
-  if (points.length > 0) {
-    path = `M ${X(points[0].at)} ${Y(points[0].level)}`;
-    for (const p of points.slice(1)) path += ` H ${X(p.at)} V ${Y(p.level)}`;
-    path += ` H ${X(Math.max(until, points.at(-1)!.at))}`;
-  }
-  return (
-    <div className="relative">
-      <div className="relative h-4 overflow-hidden rounded-md bg-surface-2">
-        {actions.map((a) => (
-          <span
-            key={a.id}
-            className="absolute inset-y-0"
-            style={{
-              left: `${pct(a.from, span)}%`,
-              width: `${Math.max(pct(a.to, span) - pct(a.from, span), 0.4)}%`,
-              background: a.color,
-            }}
-          />
-        ))}
-      </div>
-      <div className="relative mt-1 h-8">
-        <svg viewBox="0 0 1000 30" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden>
-          {[6, 12, 18].map((h) => (
-            <line key={h} x1={(h / 24) * 1000} x2={(h / 24) * 1000} y1="0" y2="30" stroke="var(--line)" vectorEffect="non-scaling-stroke" />
-          ))}
-          {path && <path d={path} fill="none" stroke="var(--pain-high)" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
-        </svg>
-        {events.map((e) => (
-          <span
-            key={e.id}
-            className="absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full"
-            style={{ left: `${pct(new Date(e.occurred_at).getTime(), span)}%`, background: e.color }}
-          />
-        ))}
-      </div>
-      <div className="flex justify-between text-[9px] text-muted tabular-nums">
-        <span>00</span>
-        <span>06</span>
-        <span>12</span>
-        <span>18</span>
-        <span>24</span>
-      </div>
+    <div className="rounded-md bg-surface-2 px-1 py-1">
+      <p className="text-[9px] tracking-wider text-muted uppercase">{label}</p>
+      <p className="text-xs font-semibold tabular-nums">{value}</p>
     </div>
   );
 }

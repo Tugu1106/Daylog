@@ -14,7 +14,7 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
   - **Pain glider** (bottom): move it when your pain changes; it records a reading and the line holds that level until the next one
   - **Right-click / long-press** anywhere on the timeline: start an action at that time, end a running one, set pain level, or add a pain event. Click a block to edit start/end, effort and notes
   - At midnight the page rolls over to a fresh, empty day
-- **All days** (`/days`) — a compact card per logged day: mini timeline, pain avg/max, sleep/active/sitting time, actions and pain events. Click a card to open that day's timeline (`/day/YYYY-MM-DD`) and fix entries
+- **All days** (`/days`) — every day in the range as a vertical 24h column (top = 00:00): actions on the left, pain level colored on the right, pain events as dots. **7d** = 7 wide columns with stats, **30d** = one row of 30, **90d** = three rows of 30. Hover a column for its summary; click to open that day (`/day/YYYY-MM-DD`)
 - **Types** (`/types`) — define your own actions (emoji, color, category) and pain types (body area, description)
 
 ## Data model
