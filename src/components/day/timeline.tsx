@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PainEvent } from "@/lib/database.types";
 import { pct, type ClippedAction, type PainPoint, type Span } from "@/lib/day";
 import { formatDuration, formatTime } from "@/lib/time";
+import { clampViewHours, MAX_VIEW_HOURS, MIN_VIEW_HOURS, VIEW_HOURS_PRESETS } from "@/lib/view";
 import { painColor } from "@/components/pain-badge";
 
 export type Target =
@@ -13,10 +14,8 @@ export type Target =
 
 export type ContextRequest = { x: number; y: number; at: number; target: Target | null };
 
-export type Zoom = "auto" | "fit" | "zoom";
-
 const LONG_PRESS_MS = 450;
-const ZOOM_WIDTH = "1800px";
+const HOUR = 3_600_000;
 
 export function Timeline({
   tz,
@@ -26,7 +25,8 @@ export function Timeline({
   events,
   painPoints,
   emojiFor,
-  zoom,
+  viewHours,
+  onViewHoursChange,
   onContext,
   onOpen,
 }: {
@@ -38,33 +38,155 @@ export function Timeline({
   events: PainEvent[];
   painPoints: PainPoint[];
   emojiFor: (typeId: string | null) => string | null;
-  zoom: Zoom;
+  /** How many hours fit in the visible width. */
+  viewHours: number;
+  onViewHoursChange: (hours: number) => void;
   onContext: (req: ContextRequest) => void;
   onOpen: (target: Target) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
+  const guideRef = useRef<HTMLDivElement>(null);
+  const guideLabelRef = useRef<HTMLSpanElement>(null);
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
   const lastLongPress = useRef(0);
+  const viewHoursRef = useRef(viewHours);
+  // Time at the center of the view; kept when the window size or screen width changes.
+  const centerRef = useRef<number | null>(null);
+  // Where an in-flight smooth pan is heading, so quick repeated clicks add up.
+  const panTargetRef = useRef<number | null>(null);
+  const [width, setWidth] = useState(0);
+  const [visible, setVisible] = useState<{ from: number; to: number } | null>(null);
 
-  // Center "now" (or the first entry) when the timeline is wider than the screen.
+  const spanMs = day.endMs - day.startMs;
+  const dayHours = spanMs / HOUR;
+  const hours = Math.min(viewHours, dayHours);
+  const pxPerHour = width ? width / hours : 0;
+
+  useEffect(() => {
+    viewHoursRef.current = viewHours;
+  }, [viewHours]);
+
   useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return;
-    const focus = now ?? lanes.flat()[0]?.from ?? day.startMs + 8 * 3600000;
-    const x = (pct(focus, day) / 100) * scroller.scrollWidth;
-    scroller.scrollLeft = x - scroller.clientWidth * 0.6;
-    // Only on mount / zoom change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom]);
+    if (!scroller) return;
+    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    ro.observe(scroller);
+    return () => ro.disconnect();
+  }, []);
 
-  function timeAt(clientX: number) {
+  function readVisible() {
+    const s = scrollerRef.current;
+    if (!s || !s.scrollWidth) return;
+    const from = day.startMs + (s.scrollLeft / s.scrollWidth) * spanMs;
+    const to = day.startMs + ((s.scrollLeft + s.clientWidth) / s.scrollWidth) * spanMs;
+    centerRef.current = (from + to) / 2;
+    if (panTargetRef.current !== null && Math.abs(panTargetRef.current - centerRef.current) < 60_000) {
+      panTargetRef.current = null;
+    }
+    setVisible({ from, to });
+  }
+
+  /** Clamp a center time so the view stays inside the day. */
+  function clampCenter(ms: number) {
+    const half = (hours / 2) * HOUR;
+    return Math.min(day.endMs - half, Math.max(day.startMs + half, ms));
+  }
+
+  function scrollToCenter(ms: number, behavior: ScrollBehavior = "auto") {
+    const s = scrollerRef.current;
+    if (!s) return;
+    ms = clampCenter(ms);
+    panTargetRef.current = behavior === "smooth" ? ms : null;
+    const x = ((ms - day.startMs) / spanMs) * s.scrollWidth - s.clientWidth / 2;
+    s.scrollTo({ left: x, behavior });
+  }
+
+  // Before paint, and whenever the window size or width changes: keep the same center.
+  useLayoutEffect(() => {
+    if (centerRef.current === null) {
+      // First render: put "now" a bit right of center so recent past is visible.
+      const focus = now !== null ? now - (hours / 6) * HOUR : (lanes.flat()[0]?.from ?? day.startMs + 12 * HOUR);
+      centerRef.current = focus;
+    }
+    scrollToCenter(centerRef.current);
+    readVisible();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewHours, width]);
+
+  // Vertical wheel pans the timeline; Ctrl/⌘ + wheel changes the window size.
+  useEffect(() => {
+    const s = scrollerRef.current;
+    if (!s) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const presets: number[] = [...VIEW_HOURS_PRESETS];
+        const cur = viewHoursRef.current;
+        const next =
+          e.deltaY > 0
+            ? (presets.find((p) => p > cur) ?? MAX_VIEW_HOURS)
+            : (presets.findLast((p) => p < cur) ?? MIN_VIEW_HOURS);
+        if (next !== cur) onViewHoursChange(next);
+        return;
+      }
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && s.scrollWidth > s.clientWidth) {
+        e.preventDefault();
+        s.scrollLeft += e.deltaY;
+      }
+    };
+    s.addEventListener("wheel", onWheel, { passive: false });
+    return () => s.removeEventListener("wheel", onWheel);
+  }, [onViewHoursChange]);
+
+  function pan(direction: -1 | 1) {
+    const base = panTargetRef.current ?? centerRef.current ?? day.startMs;
+    scrollToCenter(base + direction * (hours / 2) * HOUR, "smooth");
+  }
+
+  // ← / → pan, unless you're typing or using the pain slider.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("input, textarea, select, [role=dialog], [role=menu]")) return;
+      e.preventDefault();
+      pan(e.key === "ArrowLeft" ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  function minuteAt(clientX: number) {
     const rect = innerRef.current!.getBoundingClientRect();
     const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    let at = day.startMs + frac * (day.endMs - day.startMs);
-    at = Math.round(at / 60000) * 60000;
-    if (now !== null) at = Math.min(at, now);
-    return Math.min(at, day.endMs - 60000);
+    const at = day.startMs + frac * spanMs;
+    return Math.min(Math.round(at / 60000) * 60000, day.endMs - 60000);
+  }
+
+  function timeAt(clientX: number) {
+    const at = minuteAt(clientX);
+    return now !== null ? Math.min(at, now) : at;
+  }
+
+  function showGuide(clientX: number) {
+    const guide = guideRef.current;
+    const label = guideLabelRef.current;
+    if (!guide || !label) return;
+    const at = minuteAt(clientX);
+    const future = now !== null && at > now;
+    guide.style.left = `${((at - day.startMs) / spanMs) * 100}%`;
+    guide.style.display = "block";
+    guide.style.opacity = future ? "0.45" : "1";
+    // Keep the label on screen near the edges of the visible area.
+    const view = scrollerRef.current!.getBoundingClientRect();
+    label.style.transform =
+      clientX - view.left < 48 ? "translateX(0)" : view.right - clientX < 48 ? "translateX(-100%)" : "translateX(-50%)";
+    label.textContent = future ? `${formatTime(tz, at)} · later` : formatTime(tz, at);
+  }
+
+  function hideGuide() {
+    if (guideRef.current) guideRef.current.style.display = "none";
   }
 
   function targetOf(el: EventTarget | null): Target | null {
@@ -90,19 +212,25 @@ export function Timeline({
         press.current!.fired = true;
         lastLongPress.current = Date.now();
         navigator.vibrate?.(10);
+        showGuide(clientX);
         openAt(clientX, clientY, target);
       }, LONG_PRESS_MS);
       press.current = { timer, x: clientX, y: clientY, fired: false };
     },
     onPointerMove(e: React.PointerEvent) {
+      if (e.pointerType === "mouse") showGuide(e.clientX);
       const p = press.current;
       if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
         clearTimeout(p.timer);
         press.current = null;
       }
     },
-    onPointerUp() {
+    onPointerLeave(e: React.PointerEvent) {
+      if (e.pointerType === "mouse") hideGuide();
+    },
+    onPointerUp(e: React.PointerEvent) {
       if (press.current) clearTimeout(press.current.timer);
+      if (e.pointerType === "touch") window.setTimeout(hideGuide, 1500);
     },
     onPointerCancel() {
       if (press.current) clearTimeout(press.current.timer);
@@ -118,90 +246,253 @@ export function Timeline({
     },
   };
 
-  const hours = Array.from({ length: 25 }, (_, h) => h);
-  const innerWidth = zoom === "zoom" ? ZOOM_WIDTH : zoom === "fit" ? "100%" : undefined;
+  // Tick density follows how many pixels an hour gets.
+  const tickMinutes = pxPerHour >= 240 ? 15 : pxPerHour >= 90 ? 30 : 60;
+  const labelEvery = pxPerHour >= 120 ? tickMinutes : pxPerHour >= 30 ? 60 : pxPerHour >= 15 ? 120 : 180;
+  const totalMinutes = Math.round(dayHours * 60);
+  const ticks = Array.from({ length: Math.floor(totalMinutes / tickMinutes) + 1 }, (_, i) => i * tickMinutes);
+  const left = (m: number) => `${((m * 60000) / spanMs) * 100}%`;
 
   return (
-    <div
-      ref={scrollerRef}
-      className="timeline-scroller relative h-full overflow-x-auto overflow-y-hidden rounded-3xl border border-line bg-surface"
-    >
+    <div className="flex h-full flex-col gap-1.5">
+      <Toolbar
+        tz={tz}
+        visible={visible}
+        viewHours={viewHours}
+        isLive={now !== null}
+        onPan={pan}
+        onNow={() => now !== null && scrollToCenter(now - (hours / 6) * HOUR, "smooth")}
+        onViewHoursChange={onViewHoursChange}
+      />
       <div
-        ref={innerRef}
-        className={`relative flex h-full touch-pan-x flex-col select-none ${
-          zoom === "auto" ? "w-[1800px] lg:w-full" : ""
-        }`}
-        style={innerWidth ? { width: innerWidth } : undefined}
-        {...pointerHandlers}
+        ref={scrollerRef}
+        onScroll={readVisible}
+        className="timeline-scroller relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden rounded-3xl border border-line bg-surface"
       >
-        {/* hour grid */}
-        <div aria-hidden className="pointer-events-none absolute inset-0">
-          {hours.map((h) => (
+        <div
+          ref={innerRef}
+          className="relative flex h-full touch-pan-x flex-col overflow-x-clip select-none"
+          style={{ width: `${(dayHours / hours) * 100}%` }}
+          {...pointerHandlers}
+        >
+          {/* grid */}
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            {ticks.filter((m) => m > 0 && m < totalMinutes).map((m) => (
+              <div
+                key={m}
+                className={`absolute top-6 bottom-0 border-l ${
+                  m % 360 === 0 ? "border-line" : m % 60 === 0 ? "border-line/60" : "border-dashed border-line/40"
+                }`}
+                style={{ left: left(m) }}
+              />
+            ))}
+          </div>
+
+          {/* ruler */}
+          <div className="relative h-6 shrink-0 border-b border-line text-[10px] text-muted tabular-nums">
+            {ticks
+              .filter((m) => m % labelEvery === 0 && m < totalMinutes)
+              .map((m) => {
+                const label = formatTime(tz, day.startMs + m * 60000);
+                return (
+                  <span
+                    key={m}
+                    className={`absolute top-1.5 pl-1 ${m % 60 === 0 ? "" : "opacity-60"}`}
+                    style={{ left: left(m) }}
+                  >
+                    {labelEvery < 60 ? label : label.slice(0, 2)}
+                  </span>
+                );
+              })}
+          </div>
+
+          {/* action lanes */}
+          <div className="relative flex min-h-0 flex-[2] flex-col gap-1.5 py-2">
+            <LaneLabel>Actions</LaneLabel>
+            {lanes.map((lane, i) => (
+              <div key={i} className="relative min-h-8 flex-1" style={{ maxHeight: "3.75rem" }}>
+                {lane.map((a) => (
+                  <ActionBlock key={a.id} tz={tz} a={a} day={day} emoji={emojiFor(a.type_id)} />
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* pain events */}
+          <div className="relative h-9 shrink-0 border-t border-dashed border-line">
+            <LaneLabel>Pain events</LaneLabel>
+            {events.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                data-kind="event"
+                data-id={e.id}
+                title={`${formatTime(tz, e.occurred_at)} · ${e.name}${e.intensity != null ? ` · ${e.intensity}/10` : ""}`}
+                className="absolute top-1/2 grid h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface px-1 text-[11px] font-bold text-white shadow-sm"
+                style={{ left: `${pct(new Date(e.occurred_at).getTime(), day)}%`, background: e.color }}
+              >
+                {e.intensity ?? "!"}
+              </button>
+            ))}
+          </div>
+
+          {/* pain level line */}
+          <div className="relative min-h-24 flex-[3] border-t border-line">
+            <LaneLabel>Pain level</LaneLabel>
+            <PainLine points={painPoints} day={day} until={now ?? day.endMs} tz={tz} />
+          </div>
+
+          {/* now marker */}
+          {now !== null && (
             <div
-              key={h}
-              className={`absolute top-6 bottom-0 border-l ${h % 6 === 0 ? "border-line" : "border-line/50"}`}
-              style={{ left: `${(h / 24) * 100}%` }}
-            />
-          ))}
-        </div>
-
-        {/* ruler */}
-        <div className="relative h-6 shrink-0 border-b border-line text-[10px] text-muted tabular-nums">
-          {hours.slice(0, 24).map((h) => (
-            <span
-              key={h}
-              className={`absolute top-1.5 pl-1 ${zoom === "fit" && h % 3 !== 0 ? "hidden lg:inline" : ""}`}
-              style={{ left: `${(h / 24) * 100}%` }}
+              aria-hidden
+              className="pointer-events-none absolute top-0 bottom-0 z-10 w-0 border-l-2 border-[var(--pain-max)]"
+              style={{ left: `${pct(now, day)}%` }}
             >
-              {String(h).padStart(2, "0")}
-            </span>
-          ))}
-        </div>
+              <span className="absolute -top-0 -left-[5px] h-2.5 w-2.5 rounded-full bg-[var(--pain-max)]" />
+            </div>
+          )}
 
-        {/* action lanes */}
-        <div className="relative flex min-h-0 flex-[2] flex-col gap-1.5 py-2">
-          <LaneLabel>Actions</LaneLabel>
-          {lanes.map((lane, i) => (
-            <div key={i} className="relative min-h-8 flex-1" style={{ maxHeight: "3.75rem" }}>
-              {lane.map((a) => (
-                <ActionBlock key={a.id} tz={tz} a={a} day={day} emoji={emojiFor(a.type_id)} />
+          {/* hover guide: exact time under the cursor */}
+          <div
+            ref={guideRef}
+            aria-hidden
+            data-testid="time-guide"
+            className="pointer-events-none absolute top-0 bottom-0 z-20 w-0 border-l border-dashed border-ink/70"
+            style={{ display: "none" }}
+          >
+            <span
+              ref={guideLabelRef}
+              className="absolute top-0.5 left-0 rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap text-paper tabular-nums shadow"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Toolbar({
+  tz,
+  visible,
+  viewHours,
+  isLive,
+  onPan,
+  onNow,
+  onViewHoursChange,
+}: {
+  tz: string;
+  visible: { from: number; to: number } | null;
+  viewHours: number;
+  isLive: boolean;
+  onPan: (direction: -1 | 1) => void;
+  onNow: () => void;
+  onViewHoursChange: (hours: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(String(viewHours));
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const btn =
+    "grid h-8 min-w-8 place-items-center rounded-lg border border-line bg-surface px-2 text-sm hover:bg-surface-2";
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <button className={btn} onClick={() => onPan(-1)} aria-label="Earlier" title="Earlier (←)">
+        ‹
+      </button>
+      {isLive && (
+        <button className={`${btn} text-xs font-medium`} onClick={onNow}>
+          Now
+        </button>
+      )}
+      <button className={btn} onClick={() => onPan(1)} aria-label="Later" title="Later (→)">
+        ›
+      </button>
+      <span data-testid="visible-range" className="ml-1 truncate text-xs text-muted tabular-nums">
+        {visible && `${formatTime(tz, visible.from)} – ${formatTime(tz, visible.to)}`}
+      </span>
+
+      <div ref={boxRef} className="relative ml-auto">
+        <button
+          className={`${btn} text-xs font-medium`}
+          onClick={() => {
+            setCustom(String(viewHours));
+            setOpen(!open);
+          }}
+          aria-expanded={open}
+          title="Visible time window"
+        >
+          <span className="flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" strokeLinecap="round" />
+            </svg>
+            {viewHours}h view
+          </span>
+        </button>
+
+        {open && (
+          <div className="absolute top-full right-0 z-40 mt-1.5 w-64 rounded-2xl border border-line bg-surface p-3 shadow-2xl">
+            <p className="mb-2 text-[10px] font-semibold tracking-wider text-muted uppercase">Visible time window</p>
+            <div className="grid grid-cols-4 gap-1">
+              {VIEW_HOURS_PRESETS.map((h) => (
+                <button
+                  key={h}
+                  onClick={() => {
+                    onViewHoursChange(h);
+                    setCustom(String(h));
+                  }}
+                  className={`h-9 rounded-lg text-sm font-semibold tabular-nums ${
+                    h === viewHours ? "chip-on" : "bg-surface-2"
+                  }`}
+                >
+                  {h}h
+                </button>
               ))}
             </div>
-          ))}
-        </div>
-
-        {/* pain events */}
-        <div className="relative h-9 shrink-0 border-t border-dashed border-line">
-          <LaneLabel>Pain events</LaneLabel>
-          {events.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              data-kind="event"
-              data-id={e.id}
-              title={`${formatTime(tz, e.occurred_at)} · ${e.name}${e.intensity != null ? ` · ${e.intensity}/10` : ""}`}
-              className="absolute top-1/2 grid h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface px-1 text-[11px] font-bold text-white shadow-sm"
-              style={{ left: `${pct(new Date(e.occurred_at).getTime(), day)}%`, background: e.color }}
+            <form
+              className="mt-3 flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const h = clampViewHours(custom);
+                setCustom(String(h));
+                onViewHoursChange(h);
+              }}
             >
-              {e.intensity ?? "!"}
-            </button>
-          ))}
-        </div>
-
-        {/* pain level line */}
-        <div className="relative min-h-24 flex-[3] border-t border-line">
-          <LaneLabel>Pain level</LaneLabel>
-          <PainLine points={painPoints} day={day} until={now ?? day.endMs} tz={tz} />
-        </div>
-
-        {/* now marker */}
-        {now !== null && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute top-0 bottom-0 z-10 w-0 border-l-2 border-[var(--pain-max)]"
-            style={{ left: `${pct(now, day)}%` }}
-          >
-            <span className="absolute -top-0 -left-[5px] h-2.5 w-2.5 rounded-full bg-[var(--pain-max)]" />
+              <label className="text-xs text-muted" htmlFor="view-hours">
+                Custom
+              </label>
+              <input
+                id="view-hours"
+                type="number"
+                min={MIN_VIEW_HOURS}
+                max={MAX_VIEW_HOURS}
+                step={0.5}
+                value={custom}
+                onChange={(e) => setCustom(e.target.value)}
+                className="input w-20 px-2 py-1.5 text-sm"
+              />
+              <span className="text-xs text-muted">hours</span>
+              <button className="btn-primary ml-auto px-3 py-1.5 text-xs">Set</button>
+            </form>
+            <p className="mt-3 text-[11px] leading-snug text-muted">
+              Move with ‹ ›, arrow keys, scrolling or swiping. Ctrl + scroll zooms.
+            </p>
           </div>
         )}
       </div>

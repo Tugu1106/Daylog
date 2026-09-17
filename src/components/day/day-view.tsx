@@ -8,7 +8,8 @@ import { clipActions, packLanes, painSeries, type PainPoint } from "@/lib/day";
 import { addDays, formatDay, formatDuration, formatTime, localDay, minutesOfDay } from "@/lib/time";
 import { useDayState } from "./use-day-state";
 import { Sky } from "./sky";
-import { Timeline, type ContextRequest, type Target, type Zoom } from "./timeline";
+import { Timeline, type ContextRequest, type Target } from "./timeline";
+import { saveViewHours } from "@/lib/view";
 import { ContextMenu, type MenuHandlers } from "./context-menu";
 import { ActionSheet, PainEventSheet } from "./sheets";
 import { PainBar } from "./pain-bar";
@@ -20,16 +21,22 @@ export function DayView({
   tz,
   isToday,
   serverNow,
+  viewHours: initialViewHours,
 }: {
   data: DayData;
   tz: string;
   isToday: boolean;
   serverNow: number;
+  viewHours: number;
 }) {
   const [now, setNow] = useState(serverNow);
   const [menu, setMenu] = useState<ContextRequest | null>(null);
   const [sheet, setSheet] = useState<Target | null>(null);
-  const [zoom, setZoom] = useState<Zoom>("auto");
+  const [viewHours, setViewHours] = useState(initialViewHours);
+  const changeViewHours = useCallback((h: number) => {
+    setViewHours(h);
+    saveViewHours(h);
+  }, []);
   const [draft, setDraft] = useState<{ level: number; at: number } | null>(null);
   const { entries, ops, pending, error, clearError } = useDayState(data);
 
@@ -185,21 +192,11 @@ export function DayView({
           events={events}
           painPoints={painPoints}
           emojiFor={emojiFor}
-          zoom={zoom}
+          viewHours={viewHours}
+          onViewHoursChange={changeViewHours}
           onContext={setMenu}
           onOpen={(t) => (t.kind === "level" ? setMenu(null) : setSheet(t))}
         />
-        <div className="absolute top-8 right-2 z-20 flex overflow-hidden rounded-lg border border-line bg-surface/90 text-[11px] backdrop-blur">
-          {(["fit", "zoom"] as const).map((z) => (
-            <button
-              key={z}
-              onClick={() => setZoom(zoom === z ? "auto" : z)}
-              className={`px-2 py-1 ${zoom === z ? "bg-accent text-(--accent-ink)" : "text-muted"}`}
-            >
-              {z === "fit" ? "24h" : "Zoom"}
-            </button>
-          ))}
-        </div>
         {pending && (
           <span className="absolute right-3 bottom-2 z-20 rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted shadow">
             saving…

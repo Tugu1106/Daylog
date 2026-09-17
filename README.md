@@ -9,6 +9,8 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
 - **Today** (`/`) — one screen for the whole day
   - **Sky** (top): time-of-day colors, sun/moon position, clock, weather (Open-Meteo), running actions with an **End** button
   - **Timeline** (~60%): 00–24h. Action lanes → pain events → pain level line
+  - **View window**: the clock button above the timeline sets how many hours are visible (2–24h presets or custom). Move with ‹ › / Now, arrow keys, scroll or swipe; Ctrl + scroll zooms. Saved per device (`view_hours` cookie)
+  - **Hover** (or long-press on touch) shows the exact HH:MM under the cursor — the same time a right-click will use
   - **Pain glider** (bottom): move it when your pain changes; it records a reading and the line holds that level until the next one
   - **Right-click / long-press** anywhere on the timeline: start an action at that time, end a running one, set pain level, or add a pain event. Click a block to edit start/end, effort and notes
   - At midnight the page rolls over to a fresh, empty day
