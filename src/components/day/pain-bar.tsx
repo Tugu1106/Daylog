@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { painColor } from "@/components/pain-badge";
 
-const COMMIT_DELAY_MS = 900;
+const COMMIT_DELAY_MS = 600;
 
 const WORDS = ["None", "Barely", "Mild", "Mild", "Noticeable", "Distracting", "Strong", "Strong", "Severe", "Severe", "Worst"];
 
@@ -13,10 +13,13 @@ const WORDS = ["None", "Barely", "Mild", "Mild", "Noticeable", "Distracting", "S
  */
 export function PainBar({
   current,
+  onDraft,
   onCommit,
   children,
 }: {
   current: number | null;
+  /** Called on every move so the timeline can preview the level. */
+  onDraft: (level: number) => void;
   onCommit: (level: number) => void;
   children?: React.ReactNode;
 }) {
@@ -30,14 +33,16 @@ export function PainBar({
 
   function change(n: number) {
     setDraft(n);
+    onDraft(n);
     if (timer.current) clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       timer.current = null;
-      if (n !== current) onCommit(n);
+      setDraft(null);
+      onCommit(n);
     }, COMMIT_DELAY_MS);
   }
 
-  const pending = draft !== null && draft !== current;
+  const pending = draft !== null;
 
   return (
     <section className="flex items-center gap-4 rounded-3xl border border-line bg-surface px-4 py-3">
@@ -47,7 +52,7 @@ export function PainBar({
           {value ?? "–"}
         </p>
         <p className="mt-0.5 truncate text-[11px] text-muted">
-          {pending ? "saving…" : value === null ? "not set" : WORDS[value]}
+          {value === null ? "not set" : WORDS[value]}{pending && " ·"}
         </p>
       </div>
       <div className="min-w-0 flex-1">

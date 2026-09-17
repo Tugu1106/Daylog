@@ -2,22 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DayData } from "@/lib/day-data";
 import { clipActions, packLanes, painSeries, type PainPoint } from "@/lib/day";
 import { addDays, formatDay, formatDuration, formatTime, localDay, minutesOfDay } from "@/lib/time";
-import {
-  addPainEvent,
-  addPainLevel,
-  deleteAction,
-  deletePainEvent,
-  deletePainLevel,
-  endAction,
-  startAction,
-  updateAction,
-  updatePainEvent,
-  type Result,
-} from "@/app/(app)/timeline-actions";
+import { useDayState } from "./use-day-state";
 import { Sky } from "./sky";
 import { Timeline, type ContextRequest, type Target, type Zoom } from "./timeline";
 import { ContextMenu, type MenuHandlers } from "./context-menu";
@@ -41,13 +30,8 @@ export function DayView({
   const [menu, setMenu] = useState<ContextRequest | null>(null);
   const [sheet, setSheet] = useState<Target | null>(null);
   const [zoom, setZoom] = useState<Zoom>("auto");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const [optimisticLevels, addOptimisticLevel] = useOptimistic(
-    data.levels,
-    (state, p: { id: string; recorded_at: string; level: number }) =>
-      [...state, p].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at)),
-  );
+  const [draft, setDraft] = useState<{ level: number; at: number } | null>(null);
+  const { entries, ops, pending, error, clearError } = useDayState(data);
 
   const router = useRouter();
 
@@ -76,49 +60,46 @@ export function DayView({
 
   useEffect(() => {
     if (!error) return;
-    const id = setTimeout(() => setError(null), 4000);
+    const id = setTimeout(clearError, 4000);
     return () => clearTimeout(id);
-  }, [error]);
+  }, [error, clearError]);
 
   const span = useMemo(() => ({ startMs: data.startMs, endMs: data.endMs }), [data.startMs, data.endMs]);
   const liveNow = isToday ? now : null;
-  const clipped = useMemo(() => clipActions(data.actions, span, isToday ? now : span.endMs), [data.actions, span, now, isToday]);
+  const { actions, events } = entries;
+  const clipped = useMemo(() => clipActions(actions, span, isToday ? now : span.endMs), [actions, span, now, isToday]);
   const lanes = useMemo(() => packLanes(clipped, 2), [clipped]);
-  const painPoints: PainPoint[] = useMemo(() => painSeries(optimisticLevels, span), [optimisticLevels, span]);
+  // While the glider moves, show the new level live before it is saved.
+  const levels = useMemo(
+    () => (draft ? [...entries.levels, { id: "draft", level: draft.level, recorded_at: new Date(draft.at).toISOString() }] : entries.levels),
+    [entries.levels, draft],
+  );
+  const painPoints: PainPoint[] = useMemo(() => painSeries(levels, span), [levels, span]);
   const typeById = useMemo(() => new Map(data.actionTypes.map((t) => [t.id, t])), [data.actionTypes]);
   const emojiFor = useCallback((id: string | null) => (id ? typeById.get(id)?.emoji ?? null : null), [typeById]);
-  const running = data.actions.filter((a) => a.ended_at === null);
-  const currentPain = painPoints.at(-1)?.level ?? null;
-
-  const run = useCallback((fn: () => Promise<Result>) => {
-    startTransition(async () => {
-      const res = await fn();
-      if (res.error) setError(res.error);
-    });
-  }, []);
+  const running = actions.filter((a) => a.ended_at === null);
+  const savedPain = painSeries(entries.levels, span).at(-1)?.level ?? null;
 
   const closeMenu = useCallback(() => setMenu(null), []);
   const closeSheet = useCallback(() => setSheet(null), []);
 
-  function commitLevel(level: number, at: number) {
-    startTransition(async () => {
-      addOptimisticLevel({ id: `tmp-${at}`, recorded_at: new Date(at).toISOString(), level });
-      const res = await addPainLevel({ level, at });
-      if (res.error) setError(res.error);
-    });
-  }
-
   function removeTarget(t: Target) {
-    if (t.kind === "action") run(() => deleteAction(t.id));
-    else if (t.kind === "event") run(() => deletePainEvent(t.id));
-    else if (!t.id.startsWith("tmp-")) run(() => deletePainLevel(t.id));
+    if (t.kind === "action") ops.deleteAction(t.id);
+    else if (t.kind === "event") ops.deleteEvent(t.id);
+    else if (t.id !== "draft") ops.deleteLevel(t.id);
   }
 
   const handlers: MenuHandlers = {
-    start: (typeId, at) => run(() => startAction({ typeId, at })),
-    end: (id, at) => run(() => endAction({ id, at })),
-    painLevel: (level, at) => commitLevel(level, at),
-    painEvent: (typeId, at, intensity) => run(() => addPainEvent({ typeId, at, intensity })),
+    start: (typeId, at) => {
+      const type = typeById.get(typeId);
+      if (type) ops.startAction(type, at);
+    },
+    end: (id, at) => ops.endAction(id, at),
+    painLevel: (level, at) => ops.addLevel(level, at),
+    painEvent: (typeId, at, intensity) => {
+      const type = data.painTypes.find((t) => t.id === typeId);
+      if (type) ops.addEvent(type, at, intensity);
+    },
     edit: (t) => setSheet(t),
     remove: removeTarget,
   };
@@ -126,11 +107,11 @@ export function DayView({
   function targetLabel(t: Target | null) {
     if (!t) return null;
     if (t.kind === "action") {
-      const a = data.actions.find((x) => x.id === t.id);
+      const a = actions.find((x) => x.id === t.id);
       return a ? `${emojiFor(a.type_id) ?? ""} ${a.name} · ${formatTime(tz, a.started_at)}–${a.ended_at ? formatTime(tz, a.ended_at) : "now"}` : null;
     }
     if (t.kind === "event") {
-      const e = data.events.find((x) => x.id === t.id);
+      const e = events.find((x) => x.id === t.id);
       return e ? `${e.name} · ${formatTime(tz, e.occurred_at)}` : null;
     }
     const p = painPoints.find((x) => x.id === t.id);
@@ -142,8 +123,8 @@ export function DayView({
     setMenu({ x: r.left - 200, y: r.top - 420, at: Math.floor(Date.now() / 60000) * 60000, target: null });
   }
 
-  const sheetAction = sheet?.kind === "action" ? data.actions.find((a) => a.id === sheet.id) : null;
-  const sheetEvent = sheet?.kind === "event" ? data.events.find((e) => e.id === sheet.id) : null;
+  const sheetAction = sheet?.kind === "action" ? actions.find((a) => a.id === sheet.id) : null;
+  const sheetEvent = sheet?.kind === "event" ? events.find((e) => e.id === sheet.id) : null;
 
   const skyMinute = isToday ? minutesOfDay(tz, new Date(now)) : 13 * 60;
   const prevDay = addDays(data.day, -1);
@@ -172,8 +153,7 @@ export function DayView({
                     {emojiFor(a.type_id)} {a.name}
                     <span className="tabular-nums opacity-80">{formatDuration(now - new Date(a.started_at).getTime())}</span>
                     <button
-                      disabled={pending}
-                      onClick={() => run(() => endAction({ id: a.id, at: Date.now() }))}
+                      onClick={() => ops.endAction(a.id, Date.now())}
                       className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold text-black"
                     >
                       End
@@ -202,7 +182,7 @@ export function DayView({
           day={span}
           now={liveNow}
           lanes={lanes}
-          events={data.events}
+          events={events}
           painPoints={painPoints}
           emojiFor={emojiFor}
           zoom={zoom}
@@ -230,7 +210,14 @@ export function DayView({
       {/* bottom: pain glider */}
       {isToday ? (
         <div className="shrink-0">
-          <PainBar key={painPoints.at(-1)?.id ?? "none"} current={currentPain} onCommit={(l) => commitLevel(l, Date.now())}>
+          <PainBar
+            current={savedPain}
+            onDraft={(level) => setDraft({ level, at: Date.now() })}
+            onCommit={(level) => {
+              if (level !== savedPain) ops.addLevel(level, Date.now());
+              setDraft(null);
+            }}
+          >
             <button onClick={openQuickMenu} className="btn-primary px-3 py-2 text-sm">
               + Log
             </button>
@@ -248,7 +235,7 @@ export function DayView({
           tz={tz}
           req={menu}
           now={liveNow}
-          actions={data.actions}
+          actions={actions}
           actionTypes={data.actionTypes}
           painTypes={data.painTypes}
           targetLabel={targetLabel(menu.target)}
@@ -266,11 +253,11 @@ export function DayView({
           pending={pending}
           onClose={closeSheet}
           onSave={(v) => {
-            run(() => updateAction({ id: sheetAction.id, ...v }));
+            ops.updateAction(sheetAction.id, v);
             closeSheet();
           }}
           onDelete={() => {
-            run(() => deleteAction(sheetAction.id));
+            ops.deleteAction(sheetAction.id);
             closeSheet();
           }}
         />
@@ -284,11 +271,11 @@ export function DayView({
           pending={pending}
           onClose={closeSheet}
           onSave={(v) => {
-            run(() => updatePainEvent({ id: sheetEvent.id, ...v }));
+            ops.updateEvent(sheetEvent.id, v);
             closeSheet();
           }}
           onDelete={() => {
-            run(() => deletePainEvent(sheetEvent.id));
+            ops.deleteEvent(sheetEvent.id);
             closeSheet();
           }}
         />

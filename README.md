@@ -66,6 +66,13 @@ All Supabase values are server-only; nothing database-related is sent to the bro
 Migrations live in `supabase/migrations/`. After changing the schema, update `src/lib/database.types.ts`
 (or regenerate: `npx supabase gen types typescript --project-id ijcmrejyckhoajancfbr`).
 
+## Speed
+
+- Timeline changes are optimistic: they show instantly and save in the background (rolled back with an error toast if the save fails). Ids are generated in the browser so the saved row matches what you see.
+- Each change is one database round trip (~130 ms to Seoul).
+- `vercel.json` pins the server to **Seoul (`icn1`)**, next to the database. Without it Vercel runs in the US and every query crosses the Pacific.
+- `npm run dev` is slower than the real thing (compiles on demand). To feel real speed locally: `npm run build && npm start`.
+
 ## Deploy (Vercel)
 
 1. Push this repo to GitHub and import it in Vercel (framework auto-detected).
