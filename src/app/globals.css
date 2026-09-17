@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f6f3ee;
+  --surface: #ffffff;
+  --surface-2: #efeae2;
+  --ink: #1f1d1a;
+  --muted: #8a847a;
+  --line: #e4ddd2;
+  --accent: #2f5d50;
+  --accent-ink: #ffffff;
+
+  --pain-low: #3f8f6b;
+  --pain-mid-low: #93a53a;
+  --pain-mid: #d99a2b;
+  --pain-high: #d8662f;
+  --pain-max: #c23a3a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #151412;
+    --surface: #1e1c1a;
+    --surface-2: #2a2724;
+    --ink: #eeeae4;
+    --muted: #9a938a;
+    --line: #34302c;
+    --accent: #7fbfa9;
+    --accent-ink: #10201b;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface p-4;
+  }
+  .field {
+    @apply flex flex-col gap-2;
+  }
+  .field-label {
+    @apply mb-2 text-sm font-medium text-ink;
+  }
+  label.field > .field-label {
+    @apply mb-0;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-base text-ink outline-none focus:border-accent;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-2 text-sm transition;
+  }
+  .chip-on {
+    @apply border-accent bg-accent text-(--accent-ink);
+  }
+  .btn-primary {
+    @apply rounded-xl bg-accent px-4 py-3 text-base font-semibold text-(--accent-ink) transition active:scale-[0.99] disabled:opacity-60;
+  }
+  .btn-ghost {
+    @apply rounded-xl border border-line px-3 py-2 text-sm font-medium;
+  }
+  .section-title {
+    @apply text-xs font-semibold tracking-wider text-muted uppercase;
+  }
+}
