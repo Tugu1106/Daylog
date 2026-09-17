@@ -1,28 +1,34 @@
 # Daylog
 
-Personal pain & movement log. Track back pain, exercises and daily situations, then see what actually helps.
+Personal day timeline for back pain. Log what you do (with start/end), how your pain moves, and later see what actually helps.
 
 **Stack:** Next.js 16 (App Router, Server Actions, `proxy.ts`) · Supabase (Postgres + Auth + RLS) · Tailwind v4 · Vercel.
 
-## What gets tracked
+## Pages
 
-| Table | What | Key fields |
-|---|---|---|
-| `pain_logs` | A pain snapshot | intensity 0–10, body areas, pain type, context (what you were doing), tags, notes |
-| `activity_logs` | Anything you did — exercise, stretch, walk, sitting, driving, lifting, sleep… | category, name, duration, effort, sets/reps/weight, **pain before / after / next day** |
-| `exercises` | Your routine library for quick picking | name, category, default duration, cues |
-| `daily_checkins` | One per day | overall pain, morning stiffness, sleep h + quality, stress, mood, steps, sitting hours |
-| `activity_effectiveness` (view) | Avg pain change per activity | sessions, avg (after − before), avg next-day change |
+- **Today** (`/`) — one screen for the whole day
+  - **Sky** (top): time-of-day colors, sun/moon position, clock, weather (Open-Meteo), running actions with an **End** button
+  - **Timeline** (~60%): 00–24h. Action lanes → pain events → pain level line
+  - **Pain glider** (bottom): move it when your pain changes; it records a reading and the line holds that level until the next one
+  - **Right-click / long-press** anywhere on the timeline: start an action at that time, end a running one, set pain level, or add a pain event. Click a block to edit start/end, effort and notes
+  - At midnight the page rolls over to a fresh, empty day
+- **All days** (`/days`) — a compact card per logged day: mini timeline, pain avg/max, sleep/active/sitting time, actions and pain events. Click a card to open that day's timeline (`/day/YYYY-MM-DD`) and fix entries
+- **Types** (`/types`) — define your own actions (emoji, color, category) and pain types (body area, description)
 
-Every table has RLS: rows are visible only to their owner.
+## Data model
 
-## App
+| Table | What |
+|---|---|
+| `action_types` | Your action vocabulary: name, category, emoji, color |
+| `actions` | Things you did: `started_at`, `ended_at` (null = still running), effort, notes |
+| `pain_types` | Your pain vocabulary: name, body area, description, color |
+| `pain_levels` | Pain readings (0–10). Each holds until the next → a continuous line |
+| `pain_events` | One-off pain moments of a given type, with intensity |
 
-- **Today** — stats, quick log buttons, check-in status, today's timeline
-- **Log pain** / **Log activity** / **Check-in** — phone-first forms
-- **History** — 7/14/30/90 day timeline grouped by day; set "next day" pain on past activities
-- **Insights** — 30-day pain trend + which activities lower/raise pain
-- **Exercises** — manage your routine
+All tables have owner-only RLS. `seed_default_types()` gives a new account a starter set (called on sign-in).
+Because the pain line is continuous, "pain before/after an action" can be derived for analysis later.
+
+Times are stored in UTC; the browser's timezone is synced to a `tz` cookie so "today" is computed correctly on the server.
 
 ## Local dev
 
@@ -38,20 +44,18 @@ npm run dev
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://ijcmrejyckhoajancfbr.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_…`) |
-| `NEXT_PUBLIC_APP_TIMEZONE` | IANA zone used for "today", e.g. `Asia/Ulaanbaatar` |
+| `NEXT_PUBLIC_APP_TIMEZONE` | Fallback timezone before the browser syncs, e.g. `Asia/Ulaanbaatar` |
+| `NEXT_PUBLIC_WEATHER_LAT` / `NEXT_PUBLIC_WEATHER_LON` | Optional weather location (defaults to Ulaanbaatar) |
 
 ## Database
 
-Migrations live in `supabase/migrations/`. After changing the schema, regenerate types:
-
-```bash
-npx supabase gen types typescript --project-id ijcmrejyckhoajancfbr > src/lib/database.types.ts
-```
+Migrations live in `supabase/migrations/`. After changing the schema, update `src/lib/database.types.ts`
+(or regenerate: `npx supabase gen types typescript --project-id ijcmrejyckhoajancfbr`).
 
 ## Deploy (Vercel)
 
 1. Push this repo to GitHub and import it in Vercel (framework auto-detected).
-2. Add the three env vars above in Vercel → Settings → Environment Variables.
+2. Add the env vars above in Vercel → Settings → Environment Variables.
 3. In Supabase → Authentication → URL Configuration, set **Site URL** to the Vercel URL and add
    `https://<your-app>.vercel.app/auth/callback` to **Redirect URLs**.
-4. After creating your own account, disable new sign-ups (Authentication → Sign In / Providers → "Allow new users to sign up" off).
+4. After creating your own account, disable new sign-ups (Authentication → Sign In / Providers).

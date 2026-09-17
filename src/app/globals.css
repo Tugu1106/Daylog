@@ -80,3 +80,74 @@ body {
     @apply text-xs font-semibold tracking-wider text-muted uppercase;
   }
 }
+
+/* Running action: moving stripes on the block */
+.action-active {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.18) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 34px 34px;
+  animation: action-stripes 1.2s linear infinite;
+  box-shadow: inset -3px 0 0 rgba(255, 255, 255, 0.85);
+}
+@keyframes action-stripes {
+  to {
+    background-position: 34px 0;
+  }
+}
+
+.timeline-scroller {
+  scrollbar-width: thin;
+}
+
+/* Pain glider */
+.pain-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+.pain-range::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--pain-low),
+    var(--pain-mid-low) 35%,
+    var(--pain-mid) 55%,
+    var(--pain-high) 75%,
+    var(--pain-max)
+  );
+}
+.pain-range::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--pain-low),
+    var(--pain-mid-low) 35%,
+    var(--pain-mid) 55%,
+    var(--pain-high) 75%,
+    var(--pain-max)
+  );
+}
+.pain-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -11px;
+  height: 32px;
+  width: 32px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 3px solid var(--ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.pain-range::-moz-range-thumb {
+  height: 26px;
+  width: 26px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 3px solid var(--ink);
+}

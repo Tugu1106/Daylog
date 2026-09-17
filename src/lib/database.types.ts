@@ -1,5 +1,5 @@
-// Generated from Supabase (project: daylog). Regenerate after schema changes:
-//   npx supabase gen types typescript --project-id ijcmrejyckhoajancfbr > src/lib/database.types.ts
+// Mirrors the Supabase schema (project: daylog). Regenerate after schema changes:
+//   npx supabase gen types typescript --project-id ijcmrejyckhoajancfbr
 
 export type Json =
   | string
@@ -9,175 +9,120 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+type Table<Row, Required extends keyof Row, Rels extends unknown[] = []> = {
+  Row: Row;
+  Insert: Pick<Row, Required> & Partial<Omit<Row, Required>>;
+  Update: Partial<Row>;
+  Relationships: Rels;
+};
+
 export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5";
   };
   public: {
     Tables: {
-      activity_logs: {
-        Row: {
-          category: string;
-          created_at: string;
-          duration_min: number | null;
-          effort: number | null;
-          exercise_id: string | null;
+      action_types: Table<
+        {
           id: string;
-          name: string;
-          notes: string | null;
-          pain_after: number | null;
-          pain_before: number | null;
-          pain_next_day: number | null;
-          reps: number | null;
-          sets: number | null;
-          started_at: string;
-          tags: string[];
           user_id: string;
-          weight_kg: number | null;
-        };
-        Insert: {
-          category: string;
-          created_at?: string;
-          duration_min?: number | null;
-          effort?: number | null;
-          exercise_id?: string | null;
-          id?: string;
           name: string;
-          notes?: string | null;
-          pain_after?: number | null;
-          pain_before?: number | null;
-          pain_next_day?: number | null;
-          reps?: number | null;
-          sets?: number | null;
-          started_at?: string;
-          tags?: string[];
-          user_id?: string;
-          weight_kg?: number | null;
-        };
-        Update: Partial<Database["public"]["Tables"]["activity_logs"]["Insert"]>;
-        Relationships: [
+          category: string;
+          emoji: string | null;
+          color: string;
+          archived: boolean;
+          sort: number;
+          created_at: string;
+        },
+        "name"
+      >;
+      actions: Table<
+        {
+          id: string;
+          user_id: string;
+          type_id: string | null;
+          name: string;
+          category: string;
+          color: string;
+          started_at: string;
+          ended_at: string | null;
+          effort: number | null;
+          notes: string | null;
+          created_at: string;
+        },
+        "name" | "category",
+        [
           {
-            foreignKeyName: "activity_logs_exercise_id_fkey";
-            columns: ["exercise_id"];
+            foreignKeyName: "actions_type_id_fkey";
+            columns: ["type_id"];
             isOneToOne: false;
-            referencedRelation: "exercises";
+            referencedRelation: "action_types";
             referencedColumns: ["id"];
           },
-        ];
-      };
-      daily_checkins: {
-        Row: {
-          created_at: string;
-          day: string;
+        ]
+      >;
+      pain_types: Table<
+        {
           id: string;
-          mood: number | null;
-          morning_stiffness: number | null;
-          notes: string | null;
-          overall_pain: number | null;
-          sitting_hours: number | null;
-          sleep_hours: number | null;
-          sleep_quality: number | null;
-          steps: number | null;
-          stress: number | null;
-          updated_at: string;
           user_id: string;
-        };
-        Insert: {
-          created_at?: string;
-          day?: string;
-          id?: string;
-          mood?: number | null;
-          morning_stiffness?: number | null;
-          notes?: string | null;
-          overall_pain?: number | null;
-          sitting_hours?: number | null;
-          sleep_hours?: number | null;
-          sleep_quality?: number | null;
-          steps?: number | null;
-          stress?: number | null;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Update: Partial<Database["public"]["Tables"]["daily_checkins"]["Insert"]>;
-        Relationships: [];
-      };
-      exercises: {
-        Row: {
-          archived: boolean;
-          category: string;
-          created_at: string;
-          default_duration_min: number | null;
+          name: string;
+          body_area: string | null;
           description: string | null;
-          id: string;
-          name: string;
-          user_id: string;
-        };
-        Insert: {
-          archived?: boolean;
-          category?: string;
-          created_at?: string;
-          default_duration_min?: number | null;
-          description?: string | null;
-          id?: string;
-          name: string;
-          user_id?: string;
-        };
-        Update: Partial<Database["public"]["Tables"]["exercises"]["Insert"]>;
-        Relationships: [];
-      };
-      pain_logs: {
-        Row: {
-          body_areas: string[];
-          context: string | null;
+          color: string;
+          archived: boolean;
+          sort: number;
           created_at: string;
+        },
+        "name"
+      >;
+      pain_levels: Table<
+        {
           id: string;
-          intensity: number;
-          logged_at: string;
-          notes: string | null;
-          pain_types: string[];
-          tags: string[];
           user_id: string;
-        };
-        Insert: {
-          body_areas?: string[];
-          context?: string | null;
-          created_at?: string;
-          id?: string;
-          intensity: number;
-          logged_at?: string;
-          notes?: string | null;
-          pain_types?: string[];
-          tags?: string[];
-          user_id?: string;
-        };
-        Update: Partial<Database["public"]["Tables"]["pain_logs"]["Insert"]>;
-        Relationships: [];
-      };
+          recorded_at: string;
+          level: number;
+          created_at: string;
+        },
+        "level"
+      >;
+      pain_events: Table<
+        {
+          id: string;
+          user_id: string;
+          type_id: string | null;
+          name: string;
+          color: string;
+          occurred_at: string;
+          intensity: number | null;
+          notes: string | null;
+          created_at: string;
+        },
+        "name",
+        [
+          {
+            foreignKeyName: "pain_events_type_id_fkey";
+            columns: ["type_id"];
+            isOneToOne: false;
+            referencedRelation: "pain_types";
+            referencedColumns: ["id"];
+          },
+        ]
+      >;
     };
-    Views: {
-      activity_effectiveness: {
-        Row: {
-          activity_key: string | null;
-          avg_duration_min: number | null;
-          avg_next_day_change: number | null;
-          avg_pain_change: number | null;
-          category: string | null;
-          last_done: string | null;
-          name: string | null;
-          sessions: number | null;
-          user_id: string | null;
-        };
-        Relationships: [];
-      };
+    Views: { [_ in never]: never };
+    Functions: {
+      seed_default_types: { Args: never; Returns: undefined };
     };
-    Functions: { [_ in never]: never };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };
 };
 
 type PublicSchema = Database["public"];
-export type Tables<T extends keyof (PublicSchema["Tables"] & PublicSchema["Views"])> =
-  (PublicSchema["Tables"] & PublicSchema["Views"])[T]["Row"];
-export type TablesInsert<T extends keyof PublicSchema["Tables"]> =
-  PublicSchema["Tables"][T]["Insert"];
+export type Tables<T extends keyof PublicSchema["Tables"]> = PublicSchema["Tables"][T]["Row"];
+
+export type ActionType = Tables<"action_types">;
+export type Action = Tables<"actions">;
+export type PainType = Tables<"pain_types">;
+export type PainLevel = Tables<"pain_levels">;
+export type PainEvent = Tables<"pain_events">;
