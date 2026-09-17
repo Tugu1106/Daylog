@@ -25,27 +25,41 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
 | `pain_levels` | Pain readings (0–10). Each holds until the next → a continuous line |
 | `pain_events` | One-off pain moments of a given type, with intensity |
 
-All tables have owner-only RLS. `seed_default_types()` gives a new account a starter set (called on sign-in).
+All tables have owner-only RLS. `seed_default_types()` adds the starter set on first login.
 Because the pain line is continuous, "pain before/after an action" can be derived for analysis later.
 
 Times are stored in UTC; the browser's timezone is synced to a `tz` cookie so "today" is computed correctly on the server.
 
+## Login
+
+Single-person app: **one password**, no accounts.
+
+- Set it in `.env.local` → `APP_PASSWORD=...` (locally) and in Vercel → Settings → Environment Variables (deployed).
+- To change it: edit the value (and redeploy on Vercel). Sessions stay logged in until you press Sign out.
+- Behind the scenes the server opens a session for one internal Supabase account
+  (`DAYLOG_DB_EMAIL` / `DAYLOG_DB_PASSWORD`) so database row-level security stays on. You never type those.
+- Wrong passwords wait 1 second before answering, to slow down guessing.
+
 ## Local dev
 
 ```bash
-cp .env.example .env.local   # fill in the publishable key
+# put your password in .env.local → APP_PASSWORD=
 npm install
 npm run dev
 ```
 
 ## Env vars
 
-| Name | Value |
+| Name | What |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://ijcmrejyckhoajancfbr.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_…`) |
+| `APP_PASSWORD` | **Your login password** |
+| `SUPABASE_URL` | `https://ijcmrejyckhoajancfbr.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_…`) |
+| `DAYLOG_DB_EMAIL` / `DAYLOG_DB_PASSWORD` | Internal Supabase account that owns the data (copy from `.env.local`) |
 | `NEXT_PUBLIC_APP_TIMEZONE` | Fallback timezone before the browser syncs, e.g. `Asia/Ulaanbaatar` |
 | `NEXT_PUBLIC_WEATHER_LAT` / `NEXT_PUBLIC_WEATHER_LON` | Optional weather location (defaults to Ulaanbaatar) |
+
+All Supabase values are server-only; nothing database-related is sent to the browser.
 
 ## Database
 
@@ -55,7 +69,5 @@ Migrations live in `supabase/migrations/`. After changing the schema, update `sr
 ## Deploy (Vercel)
 
 1. Push this repo to GitHub and import it in Vercel (framework auto-detected).
-2. Add the env vars above in Vercel → Settings → Environment Variables.
-3. In Supabase → Authentication → URL Configuration, set **Site URL** to the Vercel URL and add
-   `https://<your-app>.vercel.app/auth/callback` to **Redirect URLs**.
-4. After creating your own account, disable new sign-ups (Authentication → Sign In / Providers).
+2. Copy every variable from `.env.local` into Vercel → Settings → Environment Variables.
+3. Optional hardening: Supabase → Authentication → Sign In / Providers → turn off "Allow new users to sign up".
