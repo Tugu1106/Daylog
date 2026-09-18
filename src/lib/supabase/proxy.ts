@@ -1,10 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
+import { missingEnv, missingEnvMessage } from "@/lib/env";
 
 const PUBLIC_PATHS = ["/login"];
 
 export async function updateSession(request: NextRequest) {
+  // Say what is wrong instead of failing with a blank 500.
+  const missing = missingEnv();
+  if (missing.length > 0) {
+    return new NextResponse(missingEnvMessage(missing), {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(

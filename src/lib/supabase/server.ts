@@ -1,8 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "@/lib/database.types";
+import { missingEnv, missingEnvMessage } from "@/lib/env";
 
 export async function createClient() {
+  const missing = missingEnv();
+  if (missing.length > 0) throw new Error(missingEnvMessage(missing));
+
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
