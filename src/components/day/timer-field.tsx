@@ -7,6 +7,8 @@ import { painColor } from "@/components/pain-badge";
 
 const REMIND_EVERY_MS = 5 * 60_000;
 
+const BASE_TITLE = "Daylog";
+
 const subscribeNothing = () => () => {};
 const readPermission = (): NotificationPermission | "unsupported" =>
   "Notification" in window ? Notification.permission : "unsupported";
@@ -121,6 +123,21 @@ export function TimerField({
     beep();
     notify(`${runningType.name} — ${mins} min`, `Limit was ${runningType.limit_min} min. Time to switch.`);
   }, [over, running, runningType, tick, elapsed]);
+
+  // Show the timer in the browser tab, so you can read it without switching back.
+  useEffect(() => {
+    if (!running) {
+      document.title = BASE_TITLE;
+      return;
+    }
+    const label = runningType?.emoji ? `${runningType.emoji} ${running.name}` : running.name;
+    document.title = over
+      ? `⏰ +${clock(-remaining!)} · ${label}`
+      : `${clock(remaining ?? elapsed)} · ${label}`;
+    return () => {
+      document.title = BASE_TITLE;
+    };
+  }, [running, runningType, elapsed, remaining, over]);
 
   const progress = limitMs ? Math.min(1, elapsed / limitMs) : 0;
   const alerts = permission ?? browserPermission;
