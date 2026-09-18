@@ -12,7 +12,8 @@ export type Target =
   | { kind: "event"; id: string }
   | { kind: "level"; id: string };
 
-export type ContextRequest = { x: number; y: number; at: number; target: Target | null };
+/** `to` set = a dragged time range (start … end) instead of a single moment. */
+export type ContextRequest = { x: number; y: number; at: number; to?: number; target: Target | null };
 
 const LONG_PRESS_MS = 450;
 const HOUR = 3_600_000;
@@ -29,6 +30,7 @@ export function Timeline({
   onViewHoursChange,
   onContext,
   onOpen,
+  onClearDay,
 }: {
   tz: string;
   day: Span;
@@ -43,11 +45,15 @@ export function Timeline({
   onViewHoursChange: (hours: number) => void;
   onContext: (req: ContextRequest) => void;
   onOpen: (target: Target) => void;
+  onClearDay: () => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
   const guideLabelRef = useRef<HTMLSpanElement>(null);
+  const selectionRef = useRef<HTMLDivElement>(null);
+  const selectionLabelRef = useRef<HTMLSpanElement>(null);
+  const drag = useRef<{ fromX: number; fromAt: number; moved: boolean } | null>(null);
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
   const lastLongPress = useRef(0);
   const viewHoursRef = useRef(viewHours);
@@ -199,6 +205,22 @@ export function Timeline({
     onContext({ x: clientX, y: clientY, at: timeAt(clientX), target: targetOf(el) });
   }
 
+  function paintSelection(a: number, b: number) {
+    const box = selectionRef.current;
+    const label = selectionLabelRef.current;
+    if (!box || !label) return;
+    const [from, to] = a <= b ? [a, b] : [b, a];
+    box.style.display = "block";
+    box.style.left = `${((from - day.startMs) / spanMs) * 100}%`;
+    box.style.width = `${((to - from) / spanMs) * 100}%`;
+    label.textContent = `${formatTime(tz, from)} – ${formatTime(tz, to)} · ${formatDuration(to - from)}`;
+  }
+
+  function clearSelection() {
+    if (selectionRef.current) selectionRef.current.style.display = "none";
+    drag.current = null;
+  }
+
   const pointerHandlers = {
     onContextMenu(e: React.MouseEvent) {
       e.preventDefault();
@@ -206,6 +228,12 @@ export function Timeline({
       openAt(e.clientX, e.clientY, e.target);
     },
     onPointerDown(e: React.PointerEvent) {
+      // Mouse: drag across the timeline to log an action with a start and an end.
+      if (e.pointerType === "mouse") {
+        if (e.button !== 0 || (e.target as Element).closest("[data-kind]")) return;
+        drag.current = { fromX: e.clientX, fromAt: timeAt(e.clientX), moved: false };
+        return;
+      }
       if (e.pointerType !== "touch") return;
       const { clientX, clientY, target } = e;
       const timer = window.setTimeout(() => {
@@ -219,6 +247,13 @@ export function Timeline({
     },
     onPointerMove(e: React.PointerEvent) {
       if (e.pointerType === "mouse") showGuide(e.clientX);
+      const d = drag.current;
+      if (d) {
+        if (!d.moved && Math.abs(e.clientX - d.fromX) < 5) return;
+        d.moved = true;
+        paintSelection(d.fromAt, timeAt(e.clientX));
+        return;
+      }
       const p = press.current;
       if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
         clearTimeout(p.timer);
@@ -231,12 +266,26 @@ export function Timeline({
     onPointerUp(e: React.PointerEvent) {
       if (press.current) clearTimeout(press.current.timer);
       if (e.pointerType === "touch") window.setTimeout(hideGuide, 1500);
+      const d = drag.current;
+      if (d?.moved) {
+        const b = timeAt(e.clientX);
+        const [from, to] = d.fromAt <= b ? [d.fromAt, b] : [b, d.fromAt];
+        clearSelection();
+        if (to - from >= 60_000) onContext({ x: e.clientX, y: e.clientY, at: from, to, target: null });
+        return;
+      }
+      clearSelection();
     },
     onPointerCancel() {
       if (press.current) clearTimeout(press.current.timer);
       press.current = null;
+      clearSelection();
     },
     onClick(e: React.MouseEvent) {
+      if (drag.current?.moved) {
+        clearSelection();
+        return;
+      }
       if (press.current?.fired) {
         press.current = null;
         return;
@@ -263,6 +312,7 @@ export function Timeline({
         onPan={pan}
         onNow={() => now !== null && scrollToCenter(now - (hours / 6) * HOUR, "smooth")}
         onViewHoursChange={onViewHoursChange}
+        onClearDay={onClearDay}
       />
       <div
         ref={scrollerRef}
@@ -353,6 +403,20 @@ export function Timeline({
             </div>
           )}
 
+          {/* drag selection: start … end for a new action */}
+          <div
+            ref={selectionRef}
+            aria-hidden
+            data-testid="drag-selection"
+            className="pointer-events-none absolute top-6 bottom-0 z-20 border-x border-accent bg-accent/15"
+            style={{ display: "none" }}
+          >
+            <span
+              ref={selectionLabelRef}
+              className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap text-(--accent-ink) tabular-nums shadow"
+            />
+          </div>
+
           {/* hover guide: exact time under the cursor */}
           <div
             ref={guideRef}
@@ -380,6 +444,7 @@ function Toolbar({
   onPan,
   onNow,
   onViewHoursChange,
+  onClearDay,
 }: {
   tz: string;
   visible: { from: number; to: number } | null;
@@ -388,6 +453,7 @@ function Toolbar({
   onPan: (direction: -1 | 1) => void;
   onNow: () => void;
   onViewHoursChange: (hours: number) => void;
+  onClearDay: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(String(viewHours));
@@ -427,7 +493,18 @@ function Toolbar({
         {visible && `${formatTime(tz, visible.from)} – ${formatTime(tz, visible.to)}`}
       </span>
 
-      <div ref={boxRef} className="relative ml-auto">
+      <button
+        className={`${btn} ml-auto text-muted hover:text-red-600`}
+        onClick={onClearDay}
+        title="Erase this day"
+        aria-label="Erase this day"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+          <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      <div ref={boxRef} className="relative">
         <button
           className={`${btn} text-xs font-medium`}
           onClick={() => {

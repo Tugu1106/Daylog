@@ -12,7 +12,11 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
   - **View window**: the clock button above the timeline sets how many hours are visible (2–24h presets or custom). Move with ‹ › / Now, arrow keys, scroll or swipe; Ctrl + scroll zooms. Saved per device (`view_hours` cookie)
   - **Hover** (or long-press on touch) shows the exact HH:MM under the cursor — the same time a right-click will use
   - **Pain glider** (bottom): move it when your pain changes; it records a reading and the line holds that level until the next one
+  - **Two ways to log an action**
+    - *Live*: **▶ Start** → pick the action → it runs until you press **End** (header chip, or right-click → End here)
+    - *With stamps*: **drag across the timeline** to select a range, then pick the action — or **+ Add…** to type start and end in a form (best on a phone, where dragging pans)
   - **Right-click / long-press** anywhere on the timeline: start an action at that time, end a running one, set pain level, or add a pain event. Click a block to edit start/end, effort and notes
+  - **Erase day** (trash icon above the timeline): deletes every action, pain reading and pain event of that day after a yes/no confirmation
   - At midnight the page rolls over to a fresh, empty day
 - **All days** (`/days`) — every day in the range as a vertical 24h column (top = 00:00): actions on the left, pain level colored on the right, pain events as dots. **7d** = 7 wide columns with stats, **30d** = one row of 30, **90d** = three rows of 30. Hover a column for its summary; click to open that day (`/day/YYYY-MM-DD`)
 - **Types** (`/types`) — define your own actions (emoji, color, category) and pain types (body area, description)
@@ -62,6 +66,11 @@ npm run dev
 | `NEXT_PUBLIC_WEATHER_LAT` / `NEXT_PUBLIC_WEATHER_LON` | Optional weather location (defaults to Ulaanbaatar) |
 
 All Supabase values are server-only; nothing database-related is sent to the browser.
+
+## Testing against real data
+
+`sandbox@daylog.local` is a second Supabase account used for browser tests, so they never touch the real log.
+Point a local server at it with `DAYLOG_DB_EMAIL=sandbox@daylog.local DAYLOG_DB_PASSWORD=… npm start`.
 
 ## Database
 

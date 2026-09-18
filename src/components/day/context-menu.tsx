@@ -9,7 +9,12 @@ import type { ContextRequest } from "./timeline";
 type Step = { kind: "root" } | { kind: "level" } | { kind: "intensity"; type: PainType };
 
 export type MenuHandlers = {
+  /** Live action: starts at `at` and runs until ended. */
   start: (typeId: string, at: number) => void;
+  /** Finished action with both stamps (from a drag on the timeline). */
+  addRange: (typeId: string, from: number, to: number) => void;
+  /** Open the form to type start and end by hand. */
+  manual: (from: number, to: number | null) => void;
   end: (actionId: string, at: number) => void;
   painLevel: (level: number, at: number) => void;
   painEvent: (typeId: string, at: number, intensity: number | null) => void;
@@ -70,8 +75,13 @@ export function ContextMenu({
     };
   }, [onClose]);
 
+  const range = req.to !== undefined && req.to > at ? req.to : null;
   const isNow = now !== null && Math.abs(now - at) < 90_000;
-  const timeLabel = isNow ? `now · ${formatTime(tz, at)}` : formatTime(tz, at);
+  const timeLabel = range
+    ? `${formatTime(tz, at)} – ${formatTime(tz, range)} · ${formatDuration(range - at)}`
+    : isNow
+      ? `now · ${formatTime(tz, at)}`
+      : formatTime(tz, at);
   const running = actions.filter(
     (a) => a.ended_at === null && new Date(a.started_at).getTime() <= at && a.id !== target?.id,
   );
@@ -101,7 +111,32 @@ export function ContextMenu({
         )}
       </div>
 
-      {step.kind === "root" && (
+      {step.kind === "root" && range !== null && (
+        <>
+          <Section title="Log this time range">
+            <div className="grid grid-cols-2 gap-1">
+              {liveTypes.map((t) => (
+                <button
+                  key={t.id}
+                  role="menuitem"
+                  onClick={act(() => handlers.addRange(t.id, at, range))}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
+                >
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-sm" style={{ background: `${t.color}33` }}>
+                    {t.emoji ?? "•"}
+                  </span>
+                  <span className="truncate">{t.name}</span>
+                </button>
+              ))}
+            </div>
+          </Section>
+          <Section title="Or">
+            <Item onClick={act(() => handlers.manual(at, range))}>Type the times instead…</Item>
+          </Section>
+        </>
+      )}
+
+      {step.kind === "root" && range === null && (
         <>
           {target && (
             <Section title={targetLabel ?? "Selected"}>
@@ -148,6 +183,10 @@ export function ContextMenu({
                 </button>
               ))}
             </div>
+          </Section>
+
+          <Section title="Or">
+            <Item onClick={act(() => handlers.manual(at, null))}>Type start &amp; end times…</Item>
           </Section>
 
           <Section title="Pain">

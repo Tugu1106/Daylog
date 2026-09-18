@@ -48,13 +48,20 @@ function cleanName(v: unknown) {
   return typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 60) : null;
 }
 
-export async function startAction(input: {
+/**
+ * Creates an action. `endAt: null` starts a live one that runs until you end it;
+ * a number stores a finished action with both stamps.
+ */
+export async function addAction(input: {
   id: string;
   typeId: string;
   name: string;
   category: string;
   color: string;
   at: number;
+  endAt: number | null;
+  effort?: number | null;
+  notes?: string | null;
 }): Promise<Result> {
   const name = cleanName(input.name);
   if (!isId(input.id) || !isId(input.typeId) || !name || !isCategory(input.category)) {
@@ -62,6 +69,14 @@ export async function startAction(input: {
   }
   const startedAt = toIso(input.at);
   if (!startedAt) return FUTURE;
+  let endedAt: string | null = null;
+  if (input.endAt !== null) {
+    endedAt = toIso(input.endAt);
+    if (!endedAt) return FUTURE;
+    if (input.endAt < input.at) return { error: "End time is before the start." };
+  }
+  const effort = input.effort ?? null;
+  if (effort !== null && !isInt(effort, 1, 10)) return { error: "Effort is 1–10." };
 
   const supabase = await createClient();
   const res = await supabase.from("actions").insert({
@@ -71,6 +86,9 @@ export async function startAction(input: {
     category: input.category,
     color: COLOR.test(input.color) ? input.color : "#2f5d50",
     started_at: startedAt,
+    ended_at: endedAt,
+    effort,
+    notes: cleanNotes(input.notes),
   });
   return done(res.error);
 }
@@ -197,4 +215,31 @@ export async function deletePainEvent(id: string): Promise<Result> {
   if (!isId(id)) return { error: "Unknown pain event." };
   const supabase = await createClient();
   return done((await supabase.from("pain_events").delete().eq("id", id)).error);
+}
+
+// ---- whole day -----------------------------------------------------------
+
+const DAY_MIN_MS = 22 * 3_600_000;
+const DAY_MAX_MS = 26 * 3_600_000;
+
+/** Deletes everything in one local day: actions overlapping it, readings and events. */
+export async function clearDay(input: { startMs: number; endMs: number }): Promise<Result> {
+  const { startMs, endMs } = input;
+  const length = endMs - startMs;
+  if (!Number.isFinite(startMs) || length < DAY_MIN_MS || length > DAY_MAX_MS) {
+    return { error: "Bad day range." };
+  }
+  if (startMs > Date.now() + FUTURE_SLACK_MS) return FUTURE;
+
+  const start = new Date(startMs).toISOString();
+  const end = new Date(endMs).toISOString();
+  const supabase = await createClient();
+
+  const results = await Promise.all([
+    supabase.from("actions").delete().lt("started_at", end).or(`ended_at.is.null,ended_at.gt.${start}`),
+    supabase.from("pain_levels").delete().gte("recorded_at", start).lt("recorded_at", end),
+    supabase.from("pain_events").delete().gte("occurred_at", start).lt("occurred_at", end),
+  ]);
+  const failed = results.find((r) => r.error)?.error;
+  return done(failed);
 }

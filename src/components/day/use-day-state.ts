@@ -4,13 +4,14 @@ import { useOptimistic, useState, useTransition } from "react";
 import type { DayData } from "@/lib/day-data";
 import type { Action, ActionType, PainEvent, PainType } from "@/lib/database.types";
 import {
+  addAction,
   addPainEvent,
   addPainLevel,
   deleteAction,
   deletePainEvent,
   deletePainLevel,
+  clearDay,
   endAction,
-  startAction,
   updateAction,
   updatePainEvent,
   type Result,
@@ -27,7 +28,8 @@ type Op =
   | { kind: "deleteLevel"; id: string }
   | { kind: "addEvent"; row: PainEvent }
   | { kind: "patchEvent"; id: string; patch: Partial<PainEvent> }
-  | { kind: "deleteEvent"; id: string };
+  | { kind: "deleteEvent"; id: string }
+  | { kind: "clearDay" };
 
 function reduce(state: Entries, op: Op): Entries {
   switch (op.kind) {
@@ -50,6 +52,8 @@ function reduce(state: Entries, op: Op): Entries {
       return { ...state, events: state.events.map((e) => (e.id === op.id ? { ...e, ...op.patch } : e)) };
     case "deleteEvent":
       return { ...state, events: state.events.filter((e) => e.id !== op.id) };
+    case "clearDay":
+      return { actions: [], levels: [], events: [] };
   }
 }
 
@@ -76,7 +80,13 @@ export function useDayState(data: DayData) {
   }
 
   const ops = {
-    startAction(type: ActionType, at: number) {
+    /** `endAt: null` = live action that keeps running until you end it. */
+    addAction(
+      type: ActionType,
+      at: number,
+      endAt: number | null = null,
+      extra: { effort?: number | null; notes?: string | null } = {},
+    ) {
       const id = crypto.randomUUID();
       const row: Action = {
         id,
@@ -86,13 +96,23 @@ export function useDayState(data: DayData) {
         category: type.category,
         color: type.color,
         started_at: iso(at),
-        ended_at: null,
-        effort: null,
-        notes: null,
+        ended_at: endAt === null ? null : iso(endAt),
+        effort: extra.effort ?? null,
+        notes: extra.notes ?? null,
         created_at: iso(Date.now()),
       };
       mutate({ kind: "addAction", row }, () =>
-        startAction({ id, typeId: type.id, name: type.name, category: type.category, color: type.color, at }),
+        addAction({
+          id,
+          typeId: type.id,
+          name: type.name,
+          category: type.category,
+          color: type.color,
+          at,
+          endAt,
+          effort: extra.effort ?? null,
+          notes: extra.notes ?? null,
+        }),
       );
     },
     endAction(id: string, at: number) {
@@ -148,6 +168,9 @@ export function useDayState(data: DayData) {
     },
     deleteEvent(id: string) {
       mutate({ kind: "deleteEvent", id }, () => deletePainEvent(id));
+    },
+    clearDay(startMs: number, endMs: number) {
+      mutate({ kind: "clearDay" }, () => clearDay({ startMs, endMs }));
     },
   };
 

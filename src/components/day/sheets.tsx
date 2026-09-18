@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Action, PainEvent } from "@/lib/database.types";
+import type { Action, ActionType, PainEvent } from "@/lib/database.types";
 import { formatDuration, fromDateTimeInput, toDateTimeInput } from "@/lib/time";
 import { ScaleGrid } from "./context-menu";
 
@@ -202,6 +202,162 @@ export function PainEventSheet({
           </button>
           <button className="btn-ghost text-red-600" disabled={pending} onClick={onDelete}>
             Delete
+          </button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Manual logging: pick an action and type its start and end. */
+export function NewActionSheet({
+  tz,
+  types,
+  from,
+  to,
+  pending,
+  onClose,
+  onCreate,
+}: {
+  tz: string;
+  types: ActionType[];
+  from: number;
+  to: number | null;
+  pending: boolean;
+  onClose: () => void;
+  onCreate: (
+    type: ActionType,
+    from: number,
+    to: number | null,
+    extra: { effort: number | null; notes: string | null },
+  ) => void;
+}) {
+  const live = types.filter((t) => !t.archived);
+  const [typeId, setTypeId] = useState(live[0]?.id ?? "");
+  const [start, setStart] = useState(() => toDateTimeInput(tz, from));
+  const [running, setRunning] = useState(to === null);
+  const [end, setEnd] = useState(() => toDateTimeInput(tz, to ?? from + 30 * 60000));
+  const [effort, setEffort] = useState<number | null>(null);
+  const [notes, setNotes] = useState("");
+
+  const startMs = fromDateTimeInput(tz, start);
+  const endMs = running ? null : fromDateTimeInput(tz, end);
+  const type = live.find((t) => t.id === typeId);
+  const badOrder = !running && startMs !== null && endMs !== null && endMs < startMs;
+  const invalid = !type || startMs === null || (!running && endMs === null) || badOrder;
+
+  return (
+    <Sheet onClose={onClose} title="Log an action">
+      <div className="flex flex-col gap-4">
+        <div>
+          <Label>What</Label>
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+            {live.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTypeId(t.id)}
+                className={`flex items-center gap-1.5 rounded-lg border px-2 py-2 text-left text-sm ${
+                  t.id === typeId ? "border-accent bg-accent/10" : "border-line"
+                }`}
+              >
+                <span
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-sm"
+                  style={{ background: `${t.color}33` }}
+                >
+                  {t.emoji ?? "•"}
+                </span>
+                <span className="truncate">{t.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label>
+          <Label>Start</Label>
+          <input type="datetime-local" className="input" value={start} onChange={(e) => setStart(e.target.value)} />
+        </label>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <Label>End</Label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={running} onChange={(e) => setRunning(e.target.checked)} />
+              Still going
+            </label>
+          </div>
+          {!running && (
+            <input type="datetime-local" className="input" value={end} onChange={(e) => setEnd(e.target.value)} />
+          )}
+          {!running && startMs !== null && endMs !== null && !badOrder && (
+            <p className="mt-1 text-xs text-muted">Duration {formatDuration(endMs - startMs)}</p>
+          )}
+          {badOrder && <p className="mt-1 text-xs text-red-600">End is before start.</p>}
+        </div>
+
+        <div>
+          <Label>Effort {effort !== null && `· ${effort}/10`}</Label>
+          <div className="grid grid-cols-10 gap-1">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setEffort(effort === n ? null : n)}
+                className={`h-9 rounded-lg text-sm font-semibold ${effort === n ? "chip-on" : "bg-surface-2"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label>
+          <Label>Notes</Label>
+          <textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </label>
+
+        <button
+          className="btn-primary"
+          disabled={pending || invalid}
+          onClick={() => onCreate(type!, startMs!, endMs, { effort, notes })}
+        >
+          {pending ? "Saving…" : "Save action"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Yes/no dialog for destructive things. */
+export function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  body: React.ReactNode;
+  confirmLabel: string;
+  pending: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet onClose={onClose} title={title}>
+      <div className="flex flex-col gap-4">
+        <div className="text-sm">{body}</div>
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1 py-3" onClick={onClose} autoFocus>
+            No, keep it
+          </button>
+          <button
+            className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white disabled:opacity-60"
+            disabled={pending}
+            onClick={onConfirm}
+          >
+            {pending ? "…" : confirmLabel}
           </button>
         </div>
       </div>
