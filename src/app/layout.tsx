@@ -12,7 +12,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://daylog.win";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Daylog",
   description: "Track pain, movement and what actually helps.",
   appleWebApp: { capable: true, title: "Daylog", statusBarStyle: "default" },
