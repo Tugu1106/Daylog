@@ -64,7 +64,7 @@ export function ActionTypeRow({ type }: { type?: ActionType }) {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 text-sm" title="Show as a one-tap task in the timer field">
+        <label className="flex items-center gap-1.5 text-sm" title="Show as a one-tap activity on the timer line">
           <input type="checkbox" name="timer" defaultChecked={type?.timer ?? false} />
           Timer
         </label>
@@ -74,10 +74,10 @@ export function ActionTypeRow({ type }: { type?: ActionType }) {
           min={1}
           max={600}
           defaultValue={type?.limit_min ?? ""}
-          placeholder="limit"
-          title="Alert after this many minutes"
+          placeholder="notify"
+          title="Notify after this many minutes (no limit — just an alert)"
           className="input w-20 px-2"
-          aria-label="Limit in minutes"
+          aria-label="Notify after minutes"
         />
         <button className={isNew ? "btn-primary px-3 py-2 text-sm" : "btn-ghost"} disabled={pending}>
           {isNew ? "Add" : "Save"}

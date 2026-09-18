@@ -218,5 +218,13 @@ export function useDayState(data: DayData) {
     },
   };
 
-  return { entries, ops, pending, error, clearError: () => setError(null) };
+  /** Run a server action that is not part of the day entries (e.g. editing a type). */
+  function call(fn: () => Promise<Result>) {
+    startTransition(async () => {
+      const res = await fn();
+      if (res.error) setError(res.error);
+    });
+  }
+
+  return { entries, ops, call, pending, error, clearError: () => setError(null) };
 }

@@ -7,6 +7,7 @@ import type { DayData } from "@/lib/day-data";
 import { clipActions, packLanes, painSeries, type PainPoint } from "@/lib/day";
 import { addDays, formatDay, formatDuration, formatTime, localDay, minutesOfDay } from "@/lib/time";
 import { useDayState } from "./use-day-state";
+import { removeTimerTask, saveTimerTask } from "@/app/(app)/timeline-actions";
 import { Sky } from "./sky";
 import { Timeline, type ContextRequest, type Target } from "./timeline";
 import { saveViewHours } from "@/lib/view";
@@ -42,7 +43,7 @@ export function DayView({
   // Manual logging form and the erase-day confirmation.
   const [manual, setManual] = useState<{ from: number; to: number | null } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const { entries, ops, pending, error, clearError } = useDayState(data);
+  const { entries, ops, call, pending, error, clearError } = useDayState(data);
 
   const router = useRouter();
 
@@ -205,6 +206,9 @@ export function DayView({
           onStop={() => current && ops.endAction(current.id, Date.now())}
           onPain={(pain) => current && ops.setPain(current.id, pain)}
           onNotes={(notes) => current && ops.setNotes(current.id, notes)}
+          onSaveTask={(v) => call(() => saveTimerTask(v))}
+          onRemoveTask={(id) => call(() => removeTimerTask(id))}
+          pending={pending}
         />
       )}
 

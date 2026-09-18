@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Action, ActionType } from "@/lib/database.types";
+import { ACTION_CATEGORIES } from "@/lib/categories";
 import { formatTime } from "@/lib/time";
 import { painColor } from "@/components/pain-badge";
 
@@ -67,6 +68,9 @@ export function TimerField({
   onStop,
   onPain,
   onNotes,
+  onSaveTask,
+  onRemoveTask,
+  pending,
 }: {
   tz: string;
   types: ActionType[];
@@ -77,6 +81,15 @@ export function TimerField({
   onStop: () => void;
   onPain: (pain: number | null) => void;
   onNotes: (notes: string) => void;
+  onSaveTask: (v: {
+    id: string | null;
+    name: string;
+    emoji: string | null;
+    category: string;
+    notifyAfterMin: number | null;
+  }) => void;
+  onRemoveTask: (id: string) => void;
+  pending: boolean;
 }) {
   const [tick, setTick] = useState(now);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported" | null>(null);
@@ -94,6 +107,8 @@ export function TimerField({
   const setNote = (text: string) => setUi((u) => ({ ...u, note: text }));
   const setShowPain = (v: boolean) => setUi((u) => ({ ...u, showPain: v }));
   const alerted = useRef<{ id: string; at: number } | null>(null);
+  // null = closed, "new" = adding, otherwise the task being edited
+  const [editing, setEditing] = useState<ActionType | "new" | null>(null);
 
   const tasks = types.filter((t) => t.timer && !t.archived);
   const runningType = running ? types.find((t) => t.id === running.type_id) : null;
@@ -162,10 +177,18 @@ export function TimerField({
               </p>
               <p className="flex items-baseline gap-2">
                 <span className="text-2xl leading-tight font-semibold tabular-nums">{clock(elapsed)}</span>
-                {limitMs !== null && (
-                  <span className={`text-xs tabular-nums ${over ? "font-semibold text-[var(--pain-max)]" : "text-muted"}`}>
-                    {over ? `${clock(-remaining!)} over ${runningType!.limit_min}m` : `${clock(remaining!)} left`}
-                  </span>
+                {runningType && (
+                  <button
+                    onClick={() => setEditing(runningType)}
+                    className={`text-xs tabular-nums ${over ? "font-semibold text-[var(--pain-max)]" : "text-muted"} underline decoration-dotted underline-offset-2`}
+                    title="Change the notification threshold"
+                  >
+                    {limitMs === null
+                      ? "no alert"
+                      : over
+                        ? `${clock(-remaining!)} over ${runningType.limit_min}m`
+                        : `${clock(remaining!)} left`}
+                  </button>
                 )}
               </p>
             </div>
@@ -232,6 +255,23 @@ export function TimerField({
         </div>
       )}
 
+      {editing && (
+        <TaskEditor
+          key={editing === "new" ? "new" : editing.id}
+          task={editing === "new" ? null : editing}
+          pending={pending}
+          onSave={(v) => {
+            onSaveTask(v);
+            setEditing(null);
+          }}
+          onRemove={(id) => {
+            onRemoveTask(id);
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
         {tasks.map((t) => {
           const active = running?.type_id === t.id;
@@ -239,6 +279,11 @@ export function TimerField({
             <button
               key={t.id}
               onClick={() => onSwitch(t)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setEditing(t);
+              }}
+              title={`${t.limit_min ? `Notifies after ${t.limit_min} min · ` : ""}right-click to edit`}
               className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition active:scale-95 ${
                 active ? "border-transparent text-white" : "border-line bg-surface hover:bg-surface-2"
               }`}
@@ -247,13 +292,20 @@ export function TimerField({
               <span>{t.emoji ?? "•"}</span>
               <span className="whitespace-nowrap">{t.name}</span>
               {t.limit_min && (
-                <span className={`text-[10px] tabular-nums ${active ? "opacity-80" : "text-muted"}`}>{t.limit_min}m</span>
+                <span className={`text-[10px] tabular-nums ${active ? "opacity-80" : "text-muted"}`}>🔔{t.limit_min}m</span>
               )}
             </button>
           );
         })}
+        <button
+          onClick={() => setEditing(editing === "new" ? null : "new")}
+          className="flex shrink-0 items-center gap-1 rounded-xl border border-dashed border-line px-2.5 py-2 text-sm text-muted hover:text-ink"
+          title="Add an activity with its notification threshold"
+        >
+          ＋ Activity
+        </button>
         {tasks.length === 0 && (
-          <p className="text-xs text-muted">No timer tasks yet — mark some in Types.</p>
+          <p className="text-xs text-muted">No activities yet — add one.</p>
         )}
         {alerts === "default" && (
           <button
@@ -270,5 +322,120 @@ export function TimerField({
         )}
       </div>
     </section>
+  );
+}
+
+/** Add or edit an activity on the timer line, together with its alert threshold. */
+function TaskEditor({
+  task,
+  pending,
+  onSave,
+  onRemove,
+  onClose,
+}: {
+  task: ActionType | null;
+  pending: boolean;
+  onSave: (v: { id: string | null; name: string; emoji: string | null; category: string; notifyAfterMin: number | null }) => void;
+  onRemove: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(task?.name ?? "");
+  const [emoji, setEmoji] = useState(task?.emoji ?? "");
+  const [category, setCategory] = useState(task?.category ?? "other");
+  const [minutes, setMinutes] = useState(task?.limit_min ? String(task.limit_min) : "");
+
+  const parsed = minutes.trim() === "" ? null : Number(minutes);
+  const badMinutes = parsed !== null && (!Number.isInteger(parsed) || parsed < 1 || parsed > 600);
+  const canSave = name.trim() !== "" && !badMinutes && !pending;
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2 rounded-2xl border border-line bg-surface-2/60 p-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (canSave) {
+          onSave({ id: task?.id ?? null, name: name.trim(), emoji: emoji.trim() || null, category, notifyAfterMin: parsed });
+        }
+      }}
+    >
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold tracking-wider text-muted uppercase">Icon</span>
+        <input
+          className="input w-14 px-2 py-1.5 text-center text-sm"
+          value={emoji}
+          onChange={(e) => setEmoji(e.target.value)}
+          placeholder="🙂"
+          maxLength={8}
+          aria-label="Icon"
+        />
+      </label>
+      <label className="flex min-w-32 flex-1 flex-col gap-1">
+        <span className="text-[10px] font-semibold tracking-wider text-muted uppercase">Activity</span>
+        <input
+          className="input py-1.5 text-sm"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Standing desk"
+          maxLength={60}
+          autoFocus
+          aria-label="Activity name"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold tracking-wider text-muted uppercase">Kind</span>
+        <select
+          className="input w-28 py-1.5 text-sm"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          aria-label="Kind"
+        >
+          {ACTION_CATEGORIES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold tracking-wider text-muted uppercase">Notify after</span>
+        <span className="flex items-center gap-1">
+          <input
+            className="input w-20 px-2 py-1.5 text-sm"
+            type="number"
+            min={1}
+            max={600}
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            placeholder="none"
+            aria-label="Notify after minutes"
+          />
+          <span className="text-xs text-muted">min</span>
+        </span>
+      </label>
+
+      <div className="flex items-center gap-1.5">
+        <button className="btn-primary px-3 py-2 text-sm" disabled={!canSave}>
+          {task ? "Save" : "Add"}
+        </button>
+        {task && (
+          <button
+            type="button"
+            className="btn-ghost text-xs text-muted"
+            disabled={pending}
+            onClick={() => onRemove(task.id)}
+            title="Keeps the activity and its history, just off this line"
+          >
+            Remove from line
+          </button>
+        )}
+        <button type="button" className="text-muted" onClick={onClose} aria-label="Close editor">
+          ✕
+        </button>
+      </div>
+      {badMinutes && <p className="w-full text-xs text-red-600">Notify after must be 1–600 minutes.</p>}
+      <p className="w-full text-[11px] text-muted">
+        The activity runs with no limit — the threshold only sends you a browser notification (then every 5 min).
+      </p>
+    </form>
   );
 }
