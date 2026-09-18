@@ -61,6 +61,7 @@ export async function addAction(input: {
   at: number;
   endAt: number | null;
   effort?: number | null;
+  pain?: number | null;
   notes?: string | null;
 }): Promise<Result> {
   const name = cleanName(input.name);
@@ -77,6 +78,8 @@ export async function addAction(input: {
   }
   const effort = input.effort ?? null;
   if (effort !== null && !isInt(effort, 1, 10)) return { error: "Effort is 1–10." };
+  const pain = input.pain ?? null;
+  if (pain !== null && !isInt(pain, 0, 10)) return { error: "Pain is 0–10." };
 
   const supabase = await createClient();
   const res = await supabase.from("actions").insert({
@@ -88,9 +91,62 @@ export async function addAction(input: {
     started_at: startedAt,
     ended_at: endedAt,
     effort,
+    pain,
     notes: cleanNotes(input.notes),
   });
   return done(res.error);
+}
+
+/**
+ * One tap in the timer field: end whatever is running and start the next task,
+ * both at the same instant.
+ */
+export async function switchTask(input: {
+  endId: string | null;
+  id: string;
+  typeId: string;
+  name: string;
+  category: string;
+  color: string;
+  at: number;
+}): Promise<Result> {
+  const name = cleanName(input.name);
+  if (!isId(input.id) || !isId(input.typeId) || !name || !isCategory(input.category)) {
+    return { error: "Unknown action type." };
+  }
+  if (input.endId !== null && !isId(input.endId)) return { error: "Unknown action." };
+  const at = toIso(input.at);
+  if (!at) return FUTURE;
+
+  const supabase = await createClient();
+  const [ended, started] = await Promise.all([
+    input.endId
+      ? supabase.from("actions").update({ ended_at: at }).eq("id", input.endId).lte("started_at", at)
+      : Promise.resolve({ error: null }),
+    supabase.from("actions").insert({
+      id: input.id,
+      type_id: input.typeId,
+      name,
+      category: input.category,
+      color: COLOR.test(input.color) ? input.color : "#2f5d50",
+      started_at: at,
+    }),
+  ]);
+  return done(ended.error ?? started.error);
+}
+
+/** Pain felt during one action (0–10), or null to clear it. */
+export async function setActionPain(input: { id: string; pain: number | null }): Promise<Result> {
+  if (!isId(input.id)) return { error: "Unknown action." };
+  if (input.pain !== null && !isInt(input.pain, 0, 10)) return { error: "Pain is 0–10." };
+  const supabase = await createClient();
+  return done((await supabase.from("actions").update({ pain: input.pain }).eq("id", input.id)).error);
+}
+
+export async function setActionNotes(input: { id: string; notes: string | null }): Promise<Result> {
+  if (!isId(input.id)) return { error: "Unknown action." };
+  const supabase = await createClient();
+  return done((await supabase.from("actions").update({ notes: cleanNotes(input.notes) }).eq("id", input.id)).error);
 }
 
 export async function endAction(input: { id: string; at: number }): Promise<Result> {
@@ -115,6 +171,7 @@ export async function updateAction(input: {
   startedAt: number;
   endedAt: number | null;
   effort: number | null;
+  pain?: number | null;
   notes: string | null;
 }): Promise<Result> {
   if (!isId(input.id)) return { error: "Unknown action." };
@@ -127,6 +184,8 @@ export async function updateAction(input: {
     if (input.endedAt < input.startedAt) return { error: "End time is before the start." };
   }
   if (input.effort !== null && !isInt(input.effort, 1, 10)) return { error: "Effort is 1–10." };
+  const pain = input.pain ?? null;
+  if (pain !== null && !isInt(pain, 0, 10)) return { error: "Pain is 0–10." };
 
   const supabase = await createClient();
   const res = await supabase
@@ -135,6 +194,7 @@ export async function updateAction(input: {
       started_at: startedAt,
       ended_at: endedAt,
       effort: input.effort,
+      pain,
       notes: cleanNotes(input.notes),
     })
     .eq("id", input.id);

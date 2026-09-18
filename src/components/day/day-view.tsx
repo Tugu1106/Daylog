@@ -13,6 +13,7 @@ import { saveViewHours } from "@/lib/view";
 import { ContextMenu, type MenuHandlers } from "./context-menu";
 import { ActionSheet, ConfirmDialog, NewActionSheet, PainEventSheet } from "./sheets";
 import { PainBar } from "./pain-bar";
+import { TimerField } from "./timer-field";
 
 const TICK_MS = 20_000;
 
@@ -88,6 +89,10 @@ export function DayView({
   const typeById = useMemo(() => new Map(data.actionTypes.map((t) => [t.id, t])), [data.actionTypes]);
   const emojiFor = useCallback((id: string | null) => (id ? typeById.get(id)?.emoji ?? null : null), [typeById]);
   const running = actions.filter((a) => a.ended_at === null);
+  // The timer field follows the most recently started running action.
+  const current = running.length
+    ? running.reduce((a, b) => (a.started_at >= b.started_at ? a : b))
+    : null;
   const savedPain = painSeries(entries.levels, span).at(-1)?.level ?? null;
 
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -148,7 +153,7 @@ export function DayView({
   return (
     <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-[1600px] flex-col gap-3 px-3 pt-1 pb-3 sm:px-5">
       {/* top ~25%: sky */}
-      <div className="h-[24%] min-h-40 shrink-0">
+      <div className="h-[20%] max-h-56 min-h-32 shrink-0">
         <Sky
           minuteOfDay={skyMinute}
           live={isToday}
@@ -189,6 +194,19 @@ export function DayView({
           </div>
         </Sky>
       </div>
+
+      {isToday && (
+        <TimerField
+          tz={tz}
+          types={data.actionTypes}
+          running={current}
+          now={now}
+          onSwitch={(type) => ops.switchTask(type, Date.now(), current?.id ?? null)}
+          onStop={() => current && ops.endAction(current.id, Date.now())}
+          onPain={(pain) => current && ops.setPain(current.id, pain)}
+          onNotes={(notes) => current && ops.setNotes(current.id, notes)}
+        />
+      )}
 
       {/* ~60%: timeline */}
       <div className="relative min-h-0 flex-1">

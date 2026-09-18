@@ -33,11 +33,19 @@ export async function saveActionType(_: FormState, fd: FormData): Promise<FormSt
   if (!name) return { error: "Name is required." };
   if (!isCategory(category)) return { error: "Unknown category." };
 
+  const limitRaw = str(fd, "limit_min");
+  const limit = limitRaw === null ? null : Number(limitRaw);
+  if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > 600)) {
+    return { error: "Limit must be 1–600 minutes." };
+  }
+
   const row = {
     name,
     category,
     emoji: str(fd, "emoji", 8),
     color: color(fd, "#2f5d50"),
+    timer: fd.get("timer") === "on",
+    limit_min: limit,
   };
   const supabase = await createClient();
   const { error } = id

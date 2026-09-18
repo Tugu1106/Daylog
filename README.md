@@ -16,17 +16,18 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
     - *Live*: **▶ Start** → pick the action → it runs until you press **End** (header chip, or right-click → End here)
     - *With stamps*: **drag across the timeline** to select a range, then pick the action — or **+ Add…** to type start and end in a form (best on a phone, where dragging pans)
   - **Right-click / long-press** anywhere on the timeline: start an action at that time, end a running one, set pain level, or add a pain event. Click a block to edit start/end, effort and notes
+  - **Timer field** (replaces a pomodoro app): tap a task to start it — it ends the previous one and logs straight to the timeline. Tasks with a `limit_min` alert you when time is up (browser notification + beep + the panel turns red, repeating every 5 min). The running task also takes a **pain 0–10** and a note, so you can record "sitting = 7, walking = 3"
   - **Erase day** (trash icon above the timeline): deletes every action, pain reading and pain event of that day after a yes/no confirmation
   - At midnight the page rolls over to a fresh, empty day
 - **All days** (`/days`) — every day in the range as a vertical 24h column (top = 00:00): actions on the left, pain level colored on the right, pain events as dots. **7d** = 7 wide columns with stats, **30d** = one row of 30, **90d** = three rows of 30. Hover a column for its summary; click to open that day (`/day/YYYY-MM-DD`)
-- **Types** (`/types`) — define your own actions (emoji, color, category) and pain types (body area, description)
+- **Types** (`/types`) — mark which actions appear in the timer field and their minute limits; — define your own actions (emoji, color, category) and pain types (body area, description)
 
 ## Data model
 
 | Table | What |
 |---|---|
-| `action_types` | Your action vocabulary: name, category, emoji, color |
-| `actions` | Things you did: `started_at`, `ended_at` (null = still running), effort, notes |
+| `action_types` | Your action vocabulary: name, category, emoji, color, `timer` (one-tap task), `limit_min` (alert after N minutes) |
+| `actions` | Things you did: `started_at`, `ended_at` (null = still running), effort, **pain during it**, notes |
 | `pain_types` | Your pain vocabulary: name, body area, description, color |
 | `pain_levels` | Pain readings (0–10). Each holds until the next → a continuous line |
 | `pain_events` | One-off pain moments of a given type, with intensity |

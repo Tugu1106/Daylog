@@ -33,6 +33,8 @@ export type Database = {
           archived: boolean;
           sort: number;
           created_at: string;
+          timer: boolean;
+          limit_min: number | null;
         },
         "name"
       >;
@@ -47,6 +49,7 @@ export type Database = {
           started_at: string;
           ended_at: string | null;
           effort: number | null;
+          pain: number | null;
           notes: string | null;
           created_at: string;
         },

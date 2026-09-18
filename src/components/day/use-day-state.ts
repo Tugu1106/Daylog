@@ -12,6 +12,9 @@ import {
   deletePainLevel,
   clearDay,
   endAction,
+  setActionNotes,
+  setActionPain,
+  switchTask,
   updateAction,
   updatePainEvent,
   type Result,
@@ -85,7 +88,7 @@ export function useDayState(data: DayData) {
       type: ActionType,
       at: number,
       endAt: number | null = null,
-      extra: { effort?: number | null; notes?: string | null } = {},
+      extra: { effort?: number | null; pain?: number | null; notes?: string | null } = {},
     ) {
       const id = crypto.randomUUID();
       const row: Action = {
@@ -98,6 +101,7 @@ export function useDayState(data: DayData) {
         started_at: iso(at),
         ended_at: endAt === null ? null : iso(endAt),
         effort: extra.effort ?? null,
+        pain: extra.pain ?? null,
         notes: extra.notes ?? null,
         created_at: iso(Date.now()),
       };
@@ -111,14 +115,53 @@ export function useDayState(data: DayData) {
           at,
           endAt,
           effort: extra.effort ?? null,
+          pain: extra.pain ?? null,
           notes: extra.notes ?? null,
         }),
       );
     },
+    /** Timer field: end the running task (if any) and start the next one. */
+    switchTask(type: ActionType, at: number, endId: string | null) {
+      const id = crypto.randomUUID();
+      const row: Action = {
+        id,
+        user_id: "",
+        type_id: type.id,
+        name: type.name,
+        category: type.category,
+        color: type.color,
+        started_at: iso(at),
+        ended_at: null,
+        effort: null,
+        pain: null,
+        notes: null,
+        created_at: iso(Date.now()),
+      };
+      startTransition(async () => {
+        if (endId) apply({ kind: "patchAction", id: endId, patch: { ended_at: iso(at) } });
+        apply({ kind: "addAction", row });
+        const res = await switchTask({
+          endId,
+          id,
+          typeId: type.id,
+          name: type.name,
+          category: type.category,
+          color: type.color,
+          at,
+        });
+        if (res.error) setError(res.error);
+      });
+    },
+    setPain(id: string, pain: number | null) {
+      mutate({ kind: "patchAction", id, patch: { pain } }, () => setActionPain({ id, pain }));
+    },
+    setNotes(id: string, notes: string | null) {
+      mutate({ kind: "patchAction", id, patch: { notes } }, () => setActionNotes({ id, notes }));
+    },
     endAction(id: string, at: number) {
       mutate({ kind: "patchAction", id, patch: { ended_at: iso(at) } }, () => endAction({ id, at }));
     },
-    updateAction(id: string, v: { startedAt: number; endedAt: number | null; effort: number | null; notes: string | null }) {
+    updateAction(id: string, v: { startedAt: number; endedAt: number | null; effort: number | null; pain?: number | null; notes: string | null }) {
       mutate(
         {
           kind: "patchAction",
@@ -127,6 +170,7 @@ export function useDayState(data: DayData) {
             started_at: iso(v.startedAt),
             ended_at: v.endedAt === null ? null : iso(v.endedAt),
             effort: v.effort,
+            pain: v.pain ?? null,
             notes: v.notes,
           },
         },

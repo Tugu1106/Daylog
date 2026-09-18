@@ -58,13 +58,20 @@ export function ActionSheet({
   emoji: string | null;
   pending: boolean;
   onClose: () => void;
-  onSave: (v: { startedAt: number; endedAt: number | null; effort: number | null; notes: string | null }) => void;
+  onSave: (v: {
+    startedAt: number;
+    endedAt: number | null;
+    effort: number | null;
+    pain: number | null;
+    notes: string | null;
+  }) => void;
   onDelete: () => void;
 }) {
   const [start, setStart] = useState(toDateTimeInput(tz, action.started_at));
   const [running, setRunning] = useState(action.ended_at === null);
   const [end, setEnd] = useState(() => toDateTimeInput(tz, action.ended_at ?? Date.now()));
   const [effort, setEffort] = useState<number | null>(action.effort);
+  const [pain, setPain] = useState<number | null>(action.pain);
   const [notes, setNotes] = useState(action.notes ?? "");
 
   const startMs = fromDateTimeInput(tz, start);
@@ -122,6 +129,11 @@ export function ActionSheet({
           </div>
         </div>
 
+        <div>
+          <Label>Pain during this {pain !== null && `· ${pain}/10`}</Label>
+          <ScaleGrid value={pain} onPick={(n) => setPain(pain === n ? null : n)} />
+        </div>
+
         <label>
           <Label>Notes</Label>
           <textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -131,7 +143,7 @@ export function ActionSheet({
           <button
             className="btn-primary flex-1"
             disabled={pending || invalid}
-            onClick={() => onSave({ startedAt: startMs!, endedAt: endMs, effort, notes })}
+            onClick={() => onSave({ startedAt: startMs!, endedAt: endMs, effort, pain, notes })}
           >
             {pending ? "Saving…" : "Save"}
           </button>
