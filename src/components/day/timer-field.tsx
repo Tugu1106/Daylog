@@ -147,14 +147,15 @@ export function TimerField({
     }
     const label = runningType?.emoji ? `${runningType.emoji} ${running.name}` : running.name;
     document.title = over
-      ? `⏰ +${clock(-remaining!)} · ${label}`
+      ? `⏰ -${clock(-remaining!)} · ${label}`
       : `${clock(remaining ?? elapsed)} · ${label}`;
     return () => {
       document.title = BASE_TITLE;
     };
   }, [running, runningType, elapsed, remaining, over]);
 
-  const progress = limitMs ? Math.min(1, elapsed / limitMs) : 0;
+  // The bar drains as the remaining time runs out, then sits full red.
+  const progress = limitMs ? (over ? 1 : Math.max(0, (remaining ?? 0) / limitMs)) : 0;
   const alerts = permission ?? browserPermission;
 
   return (
@@ -176,7 +177,13 @@ export function TimerField({
                 <span className="ml-2 font-normal text-muted">since {formatTime(tz, running.started_at)}</span>
               </p>
               <p className="flex items-baseline gap-2">
-                <span className="text-2xl leading-tight font-semibold tabular-nums">{clock(elapsed)}</span>
+                {/* Counts down to the threshold, then keeps going into minus. Never stops. */}
+                <span
+                  className="text-2xl leading-tight font-semibold tabular-nums"
+                  style={over ? { color: "var(--pain-max)" } : undefined}
+                >
+                  {limitMs === null ? clock(elapsed) : over ? `-${clock(-remaining!)}` : clock(remaining!)}
+                </span>
                 {runningType && (
                   <button
                     onClick={() => setEditing(runningType)}
@@ -184,10 +191,10 @@ export function TimerField({
                     title="Change the notification threshold"
                   >
                     {limitMs === null
-                      ? "no alert"
+                      ? "counting up · no alert"
                       : over
-                        ? `${clock(-remaining!)} over ${runningType.limit_min}m`
-                        : `${clock(remaining!)} left`}
+                        ? `past ${runningType.limit_min}m · ${clock(elapsed)} total`
+                        : `of ${runningType.limit_min}m · ${clock(elapsed)} so far`}
                   </button>
                 )}
               </p>
