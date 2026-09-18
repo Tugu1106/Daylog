@@ -19,7 +19,7 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
   - **Timer field** (replaces a pomodoro app): tap a task to start it — it ends the previous one and logs straight to the timeline. Activities run with **no limit**; `limit_min` is only a notification threshold that alerts you when passed (browser notification + beep + the panel turns red, repeating every 5 min). The **browser tab title** shows the live countdown (`29:58 · 🪑 Sitting`, or `⏰ +02:08 · 🚶 Walk` once over), so you can read it without switching back to the tab. The running task also takes a **pain 0–10** and a note, so you can record "sitting = 7, walking = 3"
   - **Erase day** (trash icon above the timeline): deletes every action, pain reading and pain event of that day after a yes/no confirmation
   - At midnight the page rolls over to a fresh, empty day
-- **All days** (`/days`) — every day in the range as a vertical 24h column (top = 00:00): actions on the left, pain level colored on the right, pain events as dots. **7d** = 7 wide columns with stats, **30d** = one row of 30, **90d** = three rows of 30. Hover a column for its summary; click to open that day (`/day/YYYY-MM-DD`)
+- **All days** (`/days`) — **7d**: seven tall day columns with stats · **30d**: a calendar (7 weekday columns, Monday first) where each square shows that day's actions across 00→24 and its pain bar · **90d**: three 30-day calendar cards in one row. Hover a day for its summary; click to open it (`/day/YYYY-MM-DD`)
 - **Types** (`/types`) — mark which actions appear in the timer line and their thresholds (or use **＋ Activity** on the line itself; right-click a chip to edit it); — define your own actions (emoji, color, category) and pain types (body area, description)
 
 ## Data model
