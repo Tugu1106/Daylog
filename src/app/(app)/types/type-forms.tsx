@@ -26,6 +26,8 @@ function ArchiveButton({ table, id, archived }: { table: string; id: string; arc
 export function ActionTypeRow({ type }: { type?: ActionType }) {
   const [state, action, pending] = useActionState(saveActionType, undefined);
   const [color, setColor] = useState(type?.color ?? "#3f8f6b");
+  // Only timer activities can notify, so the minutes field follows the checkbox.
+  const [timer, setTimer] = useState(type?.timer ?? false);
   const isNew = !type;
 
   return (
@@ -65,7 +67,7 @@ export function ActionTypeRow({ type }: { type?: ActionType }) {
           ))}
         </select>
         <label className="flex items-center gap-1.5 text-sm" title="Show as a one-tap activity on the timer line">
-          <input type="checkbox" name="timer" defaultChecked={type?.timer ?? false} />
+          <input type="checkbox" name="timer" checked={timer} onChange={(e) => setTimer(e.target.checked)} />
           Timer
         </label>
         <input
@@ -74,9 +76,10 @@ export function ActionTypeRow({ type }: { type?: ActionType }) {
           min={1}
           max={600}
           defaultValue={type?.limit_min ?? ""}
-          placeholder="notify"
+          disabled={!timer}
+          placeholder={timer ? "notify" : "off"}
           title="Notify after this many minutes (no limit — just an alert)"
-          className="input w-20 px-2"
+          className={`input w-20 px-2 ${timer ? "" : "opacity-40"}`}
           aria-label="Notify after minutes"
         />
         <button className={isNew ? "btn-primary px-3 py-2 text-sm" : "btn-ghost"} disabled={pending}>

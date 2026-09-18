@@ -342,10 +342,12 @@ function TaskEditor({
   const [name, setName] = useState(task?.name ?? "");
   const [emoji, setEmoji] = useState(task?.emoji ?? "");
   const [category, setCategory] = useState(task?.category ?? "other");
-  const [minutes, setMinutes] = useState(task?.limit_min ? String(task.limit_min) : "");
+  // Notifications are opt-in per activity: the toggle enables the minutes field.
+  const [notify, setNotify] = useState(task?.limit_min != null);
+  const [minutes, setMinutes] = useState(task?.limit_min ? String(task.limit_min) : "30");
 
-  const parsed = minutes.trim() === "" ? null : Number(minutes);
-  const badMinutes = parsed !== null && (!Number.isInteger(parsed) || parsed < 1 || parsed > 600);
+  const parsed = !notify || minutes.trim() === "" ? null : Number(minutes);
+  const badMinutes = notify && (parsed === null || !Number.isInteger(parsed) || parsed < 1 || parsed > 600);
   const canSave = name.trim() !== "" && !badMinutes && !pending;
 
   return (
@@ -396,22 +398,31 @@ function TaskEditor({
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold tracking-wider text-muted uppercase">Notify after</span>
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted uppercase">
+          <input
+            type="checkbox"
+            checked={notify}
+            onChange={(e) => setNotify(e.target.checked)}
+            aria-label="Notify me about this activity"
+          />
+          Notify after
+        </label>
         <span className="flex items-center gap-1">
           <input
-            className="input w-20 px-2 py-1.5 text-sm"
+            className={`input w-20 px-2 py-1.5 text-sm ${notify ? "" : "opacity-40"}`}
             type="number"
             min={1}
             max={600}
-            value={minutes}
+            value={notify ? minutes : ""}
+            disabled={!notify}
             onChange={(e) => setMinutes(e.target.value)}
-            placeholder="none"
+            placeholder="off"
             aria-label="Notify after minutes"
           />
-          <span className="text-xs text-muted">min</span>
+          <span className={`text-xs text-muted ${notify ? "" : "opacity-40"}`}>min</span>
         </span>
-      </label>
+      </div>
 
       <div className="flex items-center gap-1.5">
         <button className="btn-primary px-3 py-2 text-sm" disabled={!canSave}>
@@ -434,7 +445,9 @@ function TaskEditor({
       </div>
       {badMinutes && <p className="w-full text-xs text-red-600">Notify after must be 1–600 minutes.</p>}
       <p className="w-full text-[11px] text-muted">
-        The activity runs with no limit — the threshold only sends you a browser notification (then every 5 min).
+        {notify
+          ? "The activity still runs with no limit — this only sends a browser notification (then every 5 min)."
+          : "No notification for this activity — it just runs and logs."}
       </p>
     </form>
   );
