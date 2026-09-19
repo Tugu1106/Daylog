@@ -3,7 +3,16 @@
 import { useActionState, useState } from "react";
 import type { ActionType, PainType } from "@/lib/database.types";
 import { ACTION_CATEGORIES } from "@/lib/categories";
-import { saveActionType, savePainType, setArchived, type FormState } from "./actions";
+import {
+  addToTimerBar,
+  moveTimerTask,
+  removeFromTimerBar,
+  saveActionType,
+  savePainType,
+  saveTimerSettings,
+  setArchived,
+  type FormState,
+} from "./actions";
 
 function Status({ state, pending }: { state: FormState; pending: boolean }) {
   if (pending) return <span className="text-xs text-muted">Saving…</span>;
@@ -23,11 +32,109 @@ function ArchiveButton({ table, id, archived }: { table: string; id: string; arc
   );
 }
 
+// ---- timer bar -----------------------------------------------------------
+
+/** One activity on the timer bar: order, notification threshold, remove. */
+export function TimerBarRow({ type, first, last }: { type: ActionType; first: boolean; last: boolean }) {
+  const [state, action, pending] = useActionState(saveTimerSettings, undefined);
+  const [notify, setNotify] = useState(type.limit_min != null);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 py-2">
+      <div className="flex shrink-0 flex-col">
+        {(["up", "down"] as const).map((dir) => (
+          <form action={moveTimerTask} key={dir}>
+            <input type="hidden" name="id" value={type.id} />
+            <input type="hidden" name="dir" value={dir} />
+            <button
+              className="px-1 text-[10px] leading-tight text-muted hover:text-ink disabled:opacity-25"
+              disabled={dir === "up" ? first : last}
+              aria-label={dir === "up" ? "Move up" : "Move down"}
+            >
+              {dir === "up" ? "▲" : "▼"}
+            </button>
+          </form>
+        ))}
+      </div>
+
+      <span
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-lg"
+        style={{ background: `${type.color}22` }}
+      >
+        {type.emoji ?? "•"}
+      </span>
+      <span className="min-w-28 flex-1 truncate text-sm font-medium">{type.name}</span>
+
+      <form action={action} className="flex items-center gap-2">
+        <input type="hidden" name="id" value={type.id} />
+        <label className="flex items-center gap-1.5 text-xs text-muted">
+          <input
+            type="checkbox"
+            checked={notify}
+            onChange={(e) => setNotify(e.target.checked)}
+            aria-label={`Notify about ${type.name}`}
+          />
+          Notify after
+        </label>
+        <input
+          name="limit_min"
+          type="number"
+          min={1}
+          max={600}
+          defaultValue={type.limit_min ?? 30}
+          disabled={!notify}
+          className={`input w-20 px-2 py-1.5 text-sm ${notify ? "" : "opacity-40"}`}
+          aria-label={`Notify after minutes for ${type.name}`}
+        />
+        <span className={`text-xs text-muted ${notify ? "" : "opacity-40"}`}>min</span>
+        <button className="btn-ghost text-xs" disabled={pending}>
+          Save
+        </button>
+        <Status state={state} pending={pending} />
+      </form>
+
+      <form action={removeFromTimerBar} className="ml-auto">
+        <input type="hidden" name="id" value={type.id} />
+        <button className="text-xs text-muted hover:text-red-600">Remove from bar</button>
+      </form>
+    </div>
+  );
+}
+
+export function AddToTimerBar({ options }: { options: ActionType[] }) {
+  const [id, setId] = useState("");
+  if (options.length === 0) {
+    return <p className="py-2 text-xs text-muted">Every action is already on the bar.</p>;
+  }
+  return (
+    <form action={addToTimerBar} className="flex flex-wrap items-center gap-2 py-2">
+      <select
+        name="id"
+        value={id}
+        onChange={(e) => setId(e.target.value)}
+        className="input w-56 py-2 text-sm"
+        aria-label="Action to add to the timer bar"
+      >
+        <option value="">Add an existing action…</option>
+        {options.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.emoji ? `${t.emoji} ` : ""}
+            {t.name}
+          </option>
+        ))}
+      </select>
+      <button className="btn-primary px-3 py-2 text-sm" disabled={!id}>
+        Add to bar
+      </button>
+    </form>
+  );
+}
+
+// ---- actions & pain types ------------------------------------------------
+
 export function ActionTypeRow({ type }: { type?: ActionType }) {
   const [state, action, pending] = useActionState(saveActionType, undefined);
   const [color, setColor] = useState(type?.color ?? "#3f8f6b");
-  // Only timer activities can notify, so the minutes field follows the checkbox.
-  const [timer, setTimer] = useState(type?.timer ?? false);
   const isNew = !type;
 
   return (
@@ -66,22 +173,7 @@ export function ActionTypeRow({ type }: { type?: ActionType }) {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 text-sm" title="Show as a one-tap activity on the timer line">
-          <input type="checkbox" name="timer" checked={timer} onChange={(e) => setTimer(e.target.checked)} />
-          Timer
-        </label>
-        <input
-          name="limit_min"
-          type="number"
-          min={1}
-          max={600}
-          defaultValue={type?.limit_min ?? ""}
-          disabled={!timer}
-          placeholder={timer ? "notify" : "off"}
-          title="Notify after this many minutes (no limit — just an alert)"
-          className={`input w-20 px-2 ${timer ? "" : "opacity-40"}`}
-          aria-label="Notify after minutes"
-        />
+        {type?.timer && <span className="text-[11px] text-muted">on timer bar</span>}
         <button className={isNew ? "btn-primary px-3 py-2 text-sm" : "btn-ghost"} disabled={pending}>
           {isNew ? "Add" : "Save"}
         </button>

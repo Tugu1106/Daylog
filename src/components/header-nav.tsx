@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/", label: "Today", match: (p: string) => p === "/" },
   { href: "/days", label: "All days", match: (p: string) => p.startsWith("/days") || p.startsWith("/day/") },
-  { href: "/types", label: "Types", match: (p: string) => p.startsWith("/types") },
+  { href: "/settings", label: "Settings", match: (p: string) => p.startsWith("/settings") },
 ];
 
 export function HeaderNav() {
