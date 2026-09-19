@@ -12,7 +12,7 @@ import { Sky } from "./sky";
 import { Timeline, type ContextRequest, type Target } from "./timeline";
 import { saveViewHours } from "@/lib/view";
 import { ContextMenu, type MenuHandlers } from "./context-menu";
-import { ActionSheet, ConfirmDialog, NewActionSheet, PainEventSheet } from "./sheets";
+import { ActionSheet, ConfirmDialog, EndActionSheet, NewActionSheet, PainEventSheet } from "./sheets";
 import { PainBar } from "./pain-bar";
 import { TimerField } from "./timer-field";
 
@@ -43,6 +43,8 @@ export function DayView({
   // Manual logging form and the erase-day confirmation.
   const [manual, setManual] = useState<{ from: number; to: number | null } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  // Ending a forgotten action at a time typed by hand.
+  const [ending, setEnding] = useState<{ id: string; at: number } | null>(null);
   const { entries, ops, call, pending, error, clearError } = useDayState(data);
 
   const router = useRouter();
@@ -115,6 +117,7 @@ export function DayView({
       if (type) ops.addAction(type, from, to);
     },
     manual: (from, to) => setManual({ from, to }),
+    endAt: (actionId, at) => setEnding({ id: actionId, at }),
     end: (id, at) => ops.endAction(id, at),
     painLevel: (level, at) => ops.addLevel(level, at),
     painEvent: (typeId, at, intensity) => {
@@ -322,6 +325,28 @@ export function DayView({
           }}
         />
       )}
+
+      {ending &&
+        (() => {
+          const a = actions.find((x) => x.id === ending.id);
+          if (!a) return null;
+          return (
+            <EndActionSheet
+              key={a.id}
+              tz={tz}
+              action={a}
+              emoji={emojiFor(a.type_id)}
+              defaultAt={Math.max(ending.at, new Date(a.started_at).getTime())}
+              now={now}
+              pending={pending}
+              onClose={() => setEnding(null)}
+              onEnd={(at) => {
+                ops.endAction(a.id, at);
+                setEnding(null);
+              }}
+            />
+          );
+        })()}
 
       {manual && (
         <NewActionSheet

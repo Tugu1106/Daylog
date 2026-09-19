@@ -376,3 +376,70 @@ export function ConfirmDialog({
     </Sheet>
   );
 }
+
+/** End a forgotten action at a time you type (yesterday evening, etc.). */
+export function EndActionSheet({
+  tz,
+  action,
+  emoji,
+  defaultAt,
+  now,
+  pending,
+  onClose,
+  onEnd,
+}: {
+  tz: string;
+  action: Action;
+  emoji: string | null;
+  defaultAt: number;
+  now: number;
+  pending: boolean;
+  onClose: () => void;
+  onEnd: (at: number) => void;
+}) {
+  const [value, setValue] = useState(() => toDateTimeInput(tz, defaultAt));
+  const atMs = fromDateTimeInput(tz, value);
+  const startMs = new Date(action.started_at).getTime();
+  const tooEarly = atMs !== null && atMs < startMs;
+  const future = atMs !== null && atMs > now + 60_000;
+
+  return (
+    <Sheet
+      onClose={onClose}
+      title={
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-sm" style={{ background: action.color }} />
+          End {emoji} {action.name}
+        </span>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">
+          Started {toDateTimeInput(tz, action.started_at).replace("T", " at ")} and still running.
+        </p>
+        <label>
+          <Label>Ended at</Label>
+          <input
+            type="datetime-local"
+            className="input"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoFocus
+          />
+        </label>
+        {atMs !== null && !tooEarly && !future && (
+          <p className="text-xs text-muted">Duration {formatDuration(atMs - startMs)}</p>
+        )}
+        {tooEarly && <p className="text-xs text-red-600">That is before the action started.</p>}
+        {future && <p className="text-xs text-red-600">That time is in the future.</p>}
+        <button
+          className="btn-primary"
+          disabled={pending || atMs === null || tooEarly || future}
+          onClick={() => onEnd(atMs!)}
+        >
+          {pending ? "Saving…" : "End it"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}

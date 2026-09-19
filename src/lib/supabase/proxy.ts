@@ -5,6 +5,11 @@ import { missingEnv, missingEnvMessage } from "@/lib/env";
 
 const PUBLIC_PATHS = ["/login"];
 
+/** A Supabase session cookie is present, even if it could not be verified right now. */
+function hasAuthCookie(request: NextRequest) {
+  return request.cookies.getAll().some((c) => c.name.includes("auth-token") && c.value !== "");
+}
+
 export async function updateSession(request: NextRequest) {
   // Say what is wrong instead of failing with a blank 500.
   const missing = missingEnv();
@@ -38,8 +43,17 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Do not put code between createServerClient and getClaims — it refreshes the session.
-  const { data } = await supabase.auth.getClaims();
-  const signedIn = !!data?.claims;
+  // Refresh tokens are single-use, so parallel requests with an expired token can
+  // lose the race. Treat that as "still signed in" rather than erroring or logging out;
+  // the request that won the race has already written fresh cookies.
+  let signedIn: boolean;
+  try {
+    const { data } = await supabase.auth.getClaims();
+    signedIn = !!data?.claims;
+  } catch {
+    signedIn = hasAuthCookie(request);
+  }
+  if (!signedIn && hasAuthCookie(request)) signedIn = true;
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 

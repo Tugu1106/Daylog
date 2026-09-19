@@ -15,6 +15,8 @@ export type MenuHandlers = {
   addRange: (typeId: string, from: number, to: number) => void;
   /** Open the form to type start and end by hand. */
   manual: (from: number, to: number | null) => void;
+  /** Open the form to type an end time for a running action. */
+  endAt: (actionId: string, at: number) => void;
   end: (actionId: string, at: number) => void;
   painLevel: (level: number, at: number) => void;
   painEvent: (typeId: string, at: number, intensity: number | null) => void;
@@ -140,10 +142,17 @@ export function ContextMenu({
         <>
           {target && (
             <Section title={targetLabel ?? "Selected"}>
-              {targetAction?.ended_at === null && new Date(targetAction.started_at).getTime() <= at && (
-                <Item onClick={act(() => handlers.end(targetAction.id, at))}>
-                  ■ End here ({formatDuration(at - new Date(targetAction.started_at).getTime())})
-                </Item>
+              {targetAction?.ended_at === null && (
+                <>
+                  {new Date(targetAction.started_at).getTime() <= at && (
+                    <Item onClick={act(() => handlers.end(targetAction.id, at))}>
+                      ■ End here ({formatDuration(at - new Date(targetAction.started_at).getTime())})
+                    </Item>
+                  )}
+                  <Item onClick={act(() => handlers.endAt(targetAction.id, at))}>
+                    🕑 End at a time I type…
+                  </Item>
+                </>
               )}
               {target.kind !== "level" && <Item onClick={act(() => handlers.edit(target))}>Edit…</Item>}
               <Item danger onClick={act(() => handlers.remove(target))}>
@@ -155,13 +164,23 @@ export function ContextMenu({
           {running.length > 0 && (
             <Section title={`End at ${formatTime(tz, at)}`}>
               {running.map((a) => (
-                <Item key={a.id} onClick={act(() => handlers.end(a.id, at))}>
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: a.color }} />
-                  <span className="truncate">{a.name}</span>
-                  <span className="ml-auto text-xs text-muted">
-                    {formatDuration(at - new Date(a.started_at).getTime())}
-                  </span>
-                </Item>
+                <div key={a.id} className="flex items-center gap-1">
+                  <Item onClick={act(() => handlers.end(a.id, at))}>
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: a.color }} />
+                    <span className="truncate">{a.name}</span>
+                    <span className="ml-auto text-xs text-muted">
+                      {formatDuration(at - new Date(a.started_at).getTime())}
+                    </span>
+                  </Item>
+                  <button
+                    role="menuitem"
+                    onClick={act(() => handlers.endAt(a.id, at))}
+                    title="End at a time I type"
+                    className="shrink-0 rounded-lg px-2 py-2 text-xs text-muted hover:bg-surface-2"
+                  >
+                    🕑
+                  </button>
+                </div>
               ))}
             </Section>
           )}

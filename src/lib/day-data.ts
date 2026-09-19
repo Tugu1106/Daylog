@@ -1,9 +1,21 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { dayBoundsMs } from "@/lib/time";
+import type { Tables } from "@/lib/database.types";
+
+type DayResult = {
+  day: string;
+  startMs: number;
+  endMs: number;
+  actions: Tables<"actions">[];
+  levels: { id: string; recorded_at: string; level: number }[];
+  events: Tables<"pain_events">[];
+  actionTypes: Tables<"action_types">[];
+  painTypes: Tables<"pain_types">[];
+};
 
 /** Everything the day timeline needs for one local day. */
-export async function loadDay(tz: string, day: string) {
+export async function loadDay(tz: string, day: string, retry = true): Promise<DayResult> {
   const { start: startMs, end: endMs } = dayBoundsMs(tz, day);
   const start = new Date(startMs).toISOString();
   const end = new Date(endMs).toISOString();
@@ -39,7 +51,14 @@ export async function loadDay(tz: string, day: string) {
   ]);
 
   const firstError = [actions, levels, carry, events, actionTypes, painTypes].find((r) => r.error)?.error;
-  if (firstError) throw new Error(firstError.message);
+  // A token refresh racing with this request can fail once; a retry uses the new cookies.
+  if (firstError) {
+    if (retry) {
+      await new Promise((r) => setTimeout(r, 150));
+      return loadDay(tz, day, false);
+    }
+    throw new Error(firstError.message);
+  }
 
   return {
     day,
@@ -53,4 +72,4 @@ export async function loadDay(tz: string, day: string) {
   };
 }
 
-export type DayData = Awaited<ReturnType<typeof loadDay>>;
+export type DayData = DayResult;
