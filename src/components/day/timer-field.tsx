@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Action, ActionType } from "@/lib/database.types";
-import { ACTION_CATEGORIES } from "@/lib/categories";
 import { formatTime } from "@/lib/time";
 import { painColor } from "@/components/pain-badge";
 
@@ -85,7 +84,6 @@ export function TimerField({
     id: string | null;
     name: string;
     emoji: string | null;
-    category: string;
     notifyAfterMin: number | null;
   }) => void;
   onRemoveTask: (id: string) => void;
@@ -342,13 +340,12 @@ function TaskEditor({
 }: {
   task: ActionType | null;
   pending: boolean;
-  onSave: (v: { id: string | null; name: string; emoji: string | null; category: string; notifyAfterMin: number | null }) => void;
+  onSave: (v: { id: string | null; name: string; emoji: string | null; notifyAfterMin: number | null }) => void;
   onRemove: (id: string) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(task?.name ?? "");
   const [emoji, setEmoji] = useState(task?.emoji ?? "");
-  const [category, setCategory] = useState(task?.category ?? "other");
   // Notifications are opt-in per activity: the toggle enables the minutes field.
   const [notify, setNotify] = useState(task?.limit_min != null);
   const [minutes, setMinutes] = useState(task?.limit_min ? String(task.limit_min) : "30");
@@ -363,7 +360,7 @@ function TaskEditor({
       onSubmit={(e) => {
         e.preventDefault();
         if (canSave) {
-          onSave({ id: task?.id ?? null, name: name.trim(), emoji: emoji.trim() || null, category, notifyAfterMin: parsed });
+          onSave({ id: task?.id ?? null, name: name.trim(), emoji: emoji.trim() || null, notifyAfterMin: parsed });
         }
       }}
     >
@@ -389,21 +386,6 @@ function TaskEditor({
           autoFocus
           aria-label="Activity name"
         />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold tracking-wider text-muted uppercase">Kind</span>
-        <select
-          className="input w-28 py-1.5 text-sm"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          aria-label="Kind"
-        >
-          {ACTION_CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
       </label>
       <div className="flex flex-col gap-1">
         <label className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted uppercase">

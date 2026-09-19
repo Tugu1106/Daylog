@@ -316,22 +316,21 @@ export async function saveTimerTask(input: {
   id: string | null;
   name: string;
   emoji: string | null;
-  category: string;
   notifyAfterMin: number | null;
 }): Promise<Result> {
   const name = cleanName(input.name);
   if (!name) return { error: "Give the activity a name." };
-  if (!isCategory(input.category)) return { error: "Unknown category." };
   const minutes = input.notifyAfterMin;
   if (minutes !== null && !isInt(minutes, 1, 600)) return { error: "Notify after 1–600 minutes." };
   const emoji = typeof input.emoji === "string" && input.emoji.trim() !== "" ? input.emoji.trim().slice(0, 8) : null;
 
   const supabase = await createClient();
-  const row = { name, emoji, category: input.category, limit_min: minutes, timer: true };
+  const row = { name, emoji, limit_min: minutes, timer: true };
   const { error } = input.id
     ? await supabase.from("action_types").update(row).eq("id", input.id)
     : await supabase.from("action_types").insert({
         ...row,
+        category: "other",
         color: TASK_COLORS[Math.abs([...name].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)) % TASK_COLORS.length],
       });
   if (error) {

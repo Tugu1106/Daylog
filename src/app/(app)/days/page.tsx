@@ -14,7 +14,6 @@ import {
   type PainPoint,
   type Span,
 } from "@/lib/day";
-import { ACTIVE_CATEGORIES, SEDENTARY_CATEGORIES } from "@/lib/categories";
 import type { PainEvent } from "@/lib/database.types";
 import { PainBadge, painColor } from "@/components/pain-badge";
 import { ScrollEnd } from "./scroll-end";
@@ -247,20 +246,18 @@ function Calendar({
 
 function summary(info: DayInfo) {
   const { actions, events, stats } = info;
-  const sleep = totalMinutes(actions, (a) => a.category === "sleep");
-  const active = totalMinutes(actions, (a) => ACTIVE_CATEGORIES.has(a.category));
-  const sitting = totalMinutes(actions, (a) => SEDENTARY_CATEGORIES.has(a.category));
   const dur = (m: number) => (m >= 1 ? formatDuration(m * 60000) : "–");
+  // Your own activities, longest first — no fixed categories.
+  const byName = minutesByName(actions);
+  const logged = totalMinutes(actions, () => true);
   const title = [
     formatDay(info.day),
     stats ? `pain avg ${stats.avg} (max ${stats.max})` : "no pain readings",
-    `sleep ${dur(sleep)}`,
-    `active ${dur(active)}`,
-    `sitting ${dur(sitting)}`,
+    `logged ${dur(logged)}`,
     `${events.length} pain event${events.length === 1 ? "" : "s"}`,
-    ...minutesByName(actions).map((a) => `• ${a.name} ${dur(a.minutes)}`),
+    ...byName.map((a) => `• ${a.name} ${dur(a.minutes)}`),
   ].join("\n");
-  return { sleep, active, sitting, dur, title };
+  return { byName, logged, dur, title };
 }
 
 /** One calendar square: date, a 24h action strip and the pain bar under it. */
@@ -369,9 +366,10 @@ function DayCell({
         <p className="mt-auto truncate text-[10px] text-muted">
           {info.empty
             ? "—"
-            : [s.sleep >= 1 && `😴${s.dur(s.sleep)}`, s.active >= 1 && `🏃${s.dur(s.active)}`, s.sitting >= 1 && `🪑${s.dur(s.sitting)}`]
-                .filter(Boolean)
-                .join(" ")}
+            : s.byName
+                .slice(0, 2)
+                .map((a) => `${a.name} ${s.dur(a.minutes)}`)
+                .join(" · ")}
         </p>
       )}
     </Link>
@@ -511,18 +509,17 @@ function DayColumn({ info, isToday, now }: { info: DayInfo; isToday: boolean; no
       </div>
 
       <div className="mt-2 flex flex-col gap-1.5 px-1 text-[11px]">
-        <div className="grid grid-cols-3 gap-1 text-center">
-          <Metric label="Sleep" value={s.dur(s.sleep)} />
-          <Metric label="Active" value={s.dur(s.active)} />
-          <Metric label="Sit" value={s.dur(s.sitting)} />
+        <div className="grid grid-cols-2 gap-1 text-center">
+          <Metric label="Logged" value={s.dur(s.logged)} />
+          <Metric label="Actions" value={String(actions.length)} />
         </div>
         {stats && (
           <p className="text-muted">
             pain avg <b className="text-ink">{stats.avg}</b> · max <b className="text-ink">{stats.max}</b>
           </p>
         )}
-        {minutesByName(actions)
-          .slice(0, 4)
+        {s.byName
+          .slice(0, 5)
           .map((a) => (
             <p key={a.name} className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: a.color }} />

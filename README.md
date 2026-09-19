@@ -20,15 +20,15 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
   - **Erase day** (trash icon above the timeline): deletes every action, pain reading and pain event of that day after a yes/no confirmation
   - At midnight the page rolls over to a fresh, empty day
 - **All days** (`/days`) — **7d**: seven tall day columns with stats · **30d**: a calendar (7 weekday columns, Monday first) where each square shows that day's actions across 00→24 and its pain bar · **90d**: three 30-day calendar cards in one row. Hover a day for its summary; click to open it (`/day/YYYY-MM-DD`)
-- **Settings** (`/settings`) — **Timer bar**: which activities are on it, their order and their notification thresholds · **Actions**: define everything you can log (emoji, colour, kind, archive) · **Pain types** · **This device**: timezone and alerts. The old `/types` URL redirects here
+- **Settings** (`/settings`) — **Timer bar**: which activities are on it, their order and their notification thresholds · **Actions**: define everything you can log — emoji, colour, name, with edit, archive and delete · **Pain types** · **This device**: timezone and alerts. The old `/types` URL redirects here
 
 ## Data model
 
 | Table | What |
 |---|---|
-| `action_types` | Your action vocabulary: name, category, emoji, color, `timer` (one-tap task), `limit_min` (alert after N minutes) |
+| `action_types` | Your action vocabulary: name, emoji, color, `timer` (on the timer bar), `limit_min` (notify after N minutes), `sort` |
 | `actions` | Things you did: `started_at`, `ended_at` (null = still running), effort, **pain during it**, notes |
-| `pain_types` | Your pain vocabulary: name, body area, description, color |
+| `pain_types` | Your pain vocabulary: name, color |
 | `pain_levels` | Pain readings (0–10). Each holds until the next → a continuous line |
 | `pain_events` | One-off pain moments of a given type, with intensity |
 
