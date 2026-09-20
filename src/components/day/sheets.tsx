@@ -1,44 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Action, ActionType, PainEvent } from "@/lib/database.types";
 import { formatDuration, fromDateTimeInput, toDateTimeInput } from "@/lib/time";
 import { ScaleGrid } from "./context-menu";
-
-function Sheet({
-  title,
-  onClose,
-  children,
-}: {
-  title: React.ReactNode;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal
-        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="text-muted" aria-label="Close">
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+import { Sheet } from "@/components/dialog";
 
 function Label({ children }: { children: React.ReactNode }) {
   return <span className="mb-1.5 block text-xs font-semibold tracking-wider text-muted uppercase">{children}</span>;
@@ -335,43 +301,6 @@ export function NewActionSheet({
         >
           {pending ? "Saving…" : "Save action"}
         </button>
-      </div>
-    </Sheet>
-  );
-}
-
-/** Yes/no dialog for destructive things. */
-export function ConfirmDialog({
-  title,
-  body,
-  confirmLabel,
-  pending,
-  onConfirm,
-  onClose,
-}: {
-  title: string;
-  body: React.ReactNode;
-  confirmLabel: string;
-  pending: boolean;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <Sheet onClose={onClose} title={title}>
-      <div className="flex flex-col gap-4">
-        <div className="text-sm">{body}</div>
-        <div className="flex gap-2">
-          <button className="btn-ghost flex-1 py-3" onClick={onClose} autoFocus>
-            No, keep it
-          </button>
-          <button
-            className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white disabled:opacity-60"
-            disabled={pending}
-            onClick={onConfirm}
-          >
-            {pending ? "…" : confirmLabel}
-          </button>
-        </div>
       </div>
     </Sheet>
   );

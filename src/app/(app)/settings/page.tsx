@@ -32,7 +32,11 @@ export default async function SettingsPage() {
   const actions = actionTypes.data ?? [];
   const bar = actions.filter((t) => t.timer && !t.archived);
   const offBar = actions.filter((t) => !t.timer && !t.archived);
+  const live = actions.filter((t) => !t.archived);
   const empty = actions.length === 0 && (painTypes.data ?? []).length === 0;
+
+  /** Names of the activities whose end timer hands over to `id`. */
+  const followersOf = (id: string) => actions.filter((t) => t.next_type_id === id).map((t) => t.name);
 
   return (
     <div className="mx-auto w-full max-w-4xl px-3 py-5 sm:px-5">
@@ -48,10 +52,16 @@ export default async function SettingsPage() {
 
       <Section
         title="Timer bar"
-        hint="The one-tap activities on Today, in this order. Tapping one starts it and ends the previous. A threshold only notifies you — it never stops the timer."
+        hint="The one-tap activities on Today, in this order. Tapping one starts it and ends the previous. Each has two separate timers: notify after only sends an alert and keeps counting, while end after stops the activity on its own and can start the next one for you."
       >
         {bar.map((t, i) => (
-          <TimerBarRow key={t.id} type={t} first={i === 0} last={i === bar.length - 1} />
+          <TimerBarRow
+            key={t.id}
+            type={t}
+            options={live.filter((o) => o.id !== t.id)}
+            first={i === 0}
+            last={i === bar.length - 1}
+          />
         ))}
         {bar.length === 0 && <p className="py-2 text-xs text-muted">No activities on the bar yet.</p>}
         <AddToTimerBar options={offBar} />
@@ -62,7 +72,7 @@ export default async function SettingsPage() {
         hint="Everything you can log, on the bar or not. Archive instead of deleting to keep history."
       >
         {actions.map((t) => (
-          <ActionTypeRow key={t.id} type={t} />
+          <ActionTypeRow key={t.id} type={t} usedBy={followersOf(t.id)} />
         ))}
         <ActionTypeRow />
       </Section>

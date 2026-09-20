@@ -34,7 +34,12 @@ export type Database = {
           sort: number;
           created_at: string;
           timer: boolean;
+          /** Notify-after threshold in minutes; the activity keeps running past it. */
           limit_min: number | null;
+          /** End-after threshold in minutes; the activity stops when it is reached. */
+          end_min: number | null;
+          /** Started automatically when this activity's end timer runs out. */
+          next_type_id: string | null;
         },
         "name"
       >;

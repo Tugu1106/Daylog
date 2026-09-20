@@ -12,7 +12,8 @@ import { Sky } from "./sky";
 import { Timeline, type ContextRequest, type Target } from "./timeline";
 import { saveViewHours } from "@/lib/view";
 import { ContextMenu, type MenuHandlers } from "./context-menu";
-import { ActionSheet, ConfirmDialog, EndActionSheet, NewActionSheet, PainEventSheet } from "./sheets";
+import { ActionSheet, EndActionSheet, NewActionSheet, PainEventSheet } from "./sheets";
+import { ConfirmDialog } from "@/components/dialog";
 import { PainBar } from "./pain-bar";
 import { TimerField } from "./timer-field";
 
@@ -97,6 +98,14 @@ export function DayView({
     ? running.reduce((a, b) => (a.started_at >= b.started_at ? a : b))
     : null;
   const savedPain = painSeries(entries.levels, span).at(-1)?.level ?? null;
+
+  /** An end timer ran out: close the action, and start whatever follows it. */
+  function autoEnd(at: number, nextTypeId: string | null) {
+    if (!current) return;
+    const next = nextTypeId ? typeById.get(nextTypeId) : null;
+    if (next) ops.switchTask(next, at, current.id);
+    else ops.endAction(current.id, at);
+  }
 
   const closeMenu = useCallback(() => setMenu(null), []);
   const closeSheet = useCallback(() => setSheet(null), []);
@@ -207,6 +216,7 @@ export function DayView({
           now={now}
           onSwitch={(type) => ops.switchTask(type, Date.now(), current?.id ?? null)}
           onStop={() => current && ops.endAction(current.id, Date.now())}
+          onAutoEnd={autoEnd}
           onPain={(pain) => current && ops.setPain(current.id, pain)}
           onNotes={(notes) => current && ops.setNotes(current.id, notes)}
           onSaveTask={(v) => call(() => saveTimerTask(v))}

@@ -76,6 +76,16 @@ body {
   .btn-ghost {
     @apply rounded-xl border border-line px-3 py-2 text-sm font-medium;
   }
+  .btn-danger {
+    @apply rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-60;
+  }
+  /* Small destructive/secondary action sitting at the end of a settings row */
+  .row-btn {
+    @apply rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-muted transition hover:border-ink hover:text-ink;
+  }
+  .row-btn-danger {
+    @apply hover:border-red-600 hover:bg-red-600/10 hover:text-red-600;
+  }
   .section-title {
     @apply text-xs font-semibold tracking-wider text-muted uppercase;
   }

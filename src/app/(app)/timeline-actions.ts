@@ -309,23 +309,32 @@ export async function clearDay(input: { startMs: number; endMs: number }): Promi
 const TASK_COLORS = ["#3f8f6b", "#5b6ee1", "#a0785a", "#6aa84f", "#e69138", "#7f6a93", "#c27c0e", "#2f5d50"];
 
 /**
- * Add or edit an activity on the timer line. `notifyAfterMin` is only an alert
- * threshold — the activity keeps running past it.
+ * Add or edit an activity on the timer line. The two timers do different jobs:
+ * `notifyAfterMin` only raises an alert and the activity keeps running, while
+ * `endAfterMin` ends it — handing over to `nextTypeId` when one is set.
  */
 export async function saveTimerTask(input: {
   id: string | null;
   name: string;
   emoji: string | null;
   notifyAfterMin: number | null;
+  endAfterMin: number | null;
+  nextTypeId: string | null;
 }): Promise<Result> {
   const name = cleanName(input.name);
   if (!name) return { error: "Give the activity a name." };
   const minutes = input.notifyAfterMin;
   if (minutes !== null && !isInt(minutes, 1, 600)) return { error: "Notify after 1–600 minutes." };
+  const endAfter = input.endAfterMin;
+  if (endAfter !== null && !isInt(endAfter, 1, 600)) return { error: "End after 1–600 minutes." };
+  // Nothing to hand over to when the activity never ends on its own.
+  const nextTypeId = endAfter === null ? null : input.nextTypeId;
+  if (nextTypeId !== null && !isId(nextTypeId)) return { error: "Unknown follow-on activity." };
+  if (nextTypeId !== null && nextTypeId === input.id) return { error: "An activity cannot follow itself." };
   const emoji = typeof input.emoji === "string" && input.emoji.trim() !== "" ? input.emoji.trim().slice(0, 8) : null;
 
   const supabase = await createClient();
-  const row = { name, emoji, limit_min: minutes, timer: true };
+  const row = { name, emoji, limit_min: minutes, end_min: endAfter, next_type_id: nextTypeId, timer: true };
   const { error } = input.id
     ? await supabase.from("action_types").update(row).eq("id", input.id)
     : await supabase.from("action_types").insert({

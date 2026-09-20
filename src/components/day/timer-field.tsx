@@ -6,6 +6,8 @@ import { formatTime } from "@/lib/time";
 import { painColor } from "@/components/pain-badge";
 
 const REMIND_EVERY_MS = 5 * 60_000;
+/** How late an end timer may fire and still hand over to the next activity. */
+const CATCH_UP_MS = 5 * 60_000;
 
 const BASE_TITLE = "Daylog";
 
@@ -54,9 +56,19 @@ function notify(title: string, body: string) {
   }
 }
 
+export type TaskDraft = {
+  id: string | null;
+  name: string;
+  emoji: string | null;
+  notifyAfterMin: number | null;
+  endAfterMin: number | null;
+  nextTypeId: string | null;
+};
+
 /**
  * The timer field: tap a task to start it (and end the previous one). Each task
- * can have a time limit that alerts you when it is up.
+ * carries two independent timers — one that only notifies you, and one that ends
+ * the activity and can start the next one by itself.
  */
 export function TimerField({
   tz,
@@ -65,6 +77,7 @@ export function TimerField({
   now,
   onSwitch,
   onStop,
+  onAutoEnd,
   onPain,
   onNotes,
   onSaveTask,
@@ -78,14 +91,11 @@ export function TimerField({
   now: number;
   onSwitch: (type: ActionType) => void;
   onStop: () => void;
+  /** An end timer ran out: end at `at`, then start `nextTypeId` if there is one. */
+  onAutoEnd: (at: number, nextTypeId: string | null) => void;
   onPain: (pain: number | null) => void;
   onNotes: (notes: string) => void;
-  onSaveTask: (v: {
-    id: string | null;
-    name: string;
-    emoji: string | null;
-    notifyAfterMin: number | null;
-  }) => void;
+  onSaveTask: (v: TaskDraft) => void;
   onRemoveTask: (id: string) => void;
   pending: boolean;
 }) {
@@ -105,15 +115,27 @@ export function TimerField({
   const setNote = (text: string) => setUi((u) => ({ ...u, note: text }));
   const setShowPain = (v: boolean) => setUi((u) => ({ ...u, showPain: v }));
   const alerted = useRef<{ id: string; at: number } | null>(null);
+  const autoEnded = useRef<string | null>(null);
   // null = closed, "new" = adding, otherwise the task being edited
   const [editing, setEditing] = useState<ActionType | "new" | null>(null);
 
   const tasks = types.filter((t) => t.timer && !t.archived);
-  const runningType = running ? types.find((t) => t.id === running.type_id) : null;
-  const limitMs = runningType?.limit_min ? runningType.limit_min * 60_000 : null;
-  const elapsed = running ? tick - new Date(running.started_at).getTime() : 0;
-  const over = limitMs !== null && elapsed >= limitMs;
-  const remaining = limitMs !== null ? limitMs - elapsed : null;
+  const byId = (id: string | null | undefined) => (id ? types.find((t) => t.id === id) ?? null : null);
+  const runningType = running ? byId(running.type_id) : null;
+  const startedMs = running ? new Date(running.started_at).getTime() : 0;
+  const elapsed = running ? tick - startedMs : 0;
+
+  // The nudge: alerts, then lets the activity run on.
+  const notifyMs = runningType?.limit_min ? runningType.limit_min * 60_000 : null;
+  const leftToNotify = notifyMs === null ? null : notifyMs - elapsed;
+  const over = leftToNotify !== null && leftToNotify <= 0;
+
+  // The hard stop: ends the activity, and hands over when a follow-on is set.
+  const endMs = runningType?.end_min ? runningType.end_min * 60_000 : null;
+  const leftToEnd = endMs === null ? null : endMs - elapsed;
+  const dueAt = running && endMs !== null ? startedMs + endMs : null;
+  const nextType = runningType?.next_type_id ? byId(runningType.next_type_id) : null;
+  const nextLive = nextType && !nextType.archived ? nextType : null;
 
   // Second-by-second clock while something runs.
   useEffect(() => {
@@ -122,7 +144,7 @@ export function TimerField({
     return () => clearInterval(id);
   }, [running]);
 
-  // Alert once when the limit is passed, then every 5 minutes until you switch.
+  // Alert once when the notify threshold is passed, then every 5 min until you switch.
   useEffect(() => {
     if (!running || !over || !runningType) {
       if (!over) alerted.current = null;
@@ -134,8 +156,36 @@ export function TimerField({
     alerted.current = { id: running.id, at: tick };
     const mins = Math.round(elapsed / 60000);
     beep();
-    notify(`${runningType.name} — ${mins} min`, `Limit was ${runningType.limit_min} min. Time to switch.`);
+    notify(`${runningType.name} — ${mins} min`, `You asked to be told after ${runningType.limit_min} min.`);
   }, [over, running, runningType, tick, elapsed]);
+
+  // End timer: stop the activity at the moment you set, and start the next one.
+  useEffect(() => {
+    if (!running || !runningType || dueAt === null || tick < dueAt) return;
+    if (autoEnded.current === running.id) return;
+    autoEnded.current = running.id;
+    // The tab may have been asleep for hours. Ending at the time you set is
+    // always right, but only hand over if it just happened — otherwise we would
+    // log a chain of activities you never did.
+    const next = Date.now() - dueAt > CATCH_UP_MS ? null : nextLive;
+    beep();
+    notify(
+      `${runningType.name} — time's up`,
+      next ? `Ended after ${runningType.end_min} min · ${next.name} is now running.` : `Ended after ${runningType.end_min} min.`,
+    );
+    onAutoEnd(Math.min(dueAt, Date.now()), next?.id ?? null);
+  }, [running, runningType, dueAt, tick, nextLive, onAutoEnd]);
+
+  // The big number counts down to the hard stop when there is one, otherwise to
+  // the nudge (and on into minus), otherwise it just counts up.
+  const bigClock =
+    leftToEnd !== null
+      ? clock(Math.max(0, leftToEnd))
+      : leftToNotify !== null
+        ? over
+          ? `-${clock(-leftToNotify)}`
+          : clock(leftToNotify)
+        : clock(elapsed);
 
   // Show the timer in the browser tab, so you can read it without switching back.
   useEffect(() => {
@@ -144,16 +194,22 @@ export function TimerField({
       return;
     }
     const label = runningType?.emoji ? `${runningType.emoji} ${running.name}` : running.name;
-    document.title = over
-      ? `⏰ -${clock(-remaining!)} · ${label}`
-      : `${clock(remaining ?? elapsed)} · ${label}`;
+    document.title = `${over ? "⏰ " : ""}${bigClock} · ${label}`;
     return () => {
       document.title = BASE_TITLE;
     };
-  }, [running, runningType, elapsed, remaining, over]);
+  }, [running, runningType, bigClock, over]);
 
   // The bar drains as the remaining time runs out, then sits full red.
-  const progress = limitMs ? (over ? 1 : Math.max(0, (remaining ?? 0) / limitMs)) : 0;
+  const progress =
+    endMs !== null && leftToEnd !== null
+      ? Math.max(0, leftToEnd / endMs)
+      : notifyMs !== null && leftToNotify !== null
+        ? over
+          ? 1
+          : Math.max(0, leftToNotify / notifyMs)
+        : 0;
+  const hasBar = endMs !== null || notifyMs !== null;
   const alerts = permission ?? browserPermission;
 
   return (
@@ -175,24 +231,24 @@ export function TimerField({
                 <span className="ml-2 font-normal text-muted">since {formatTime(tz, running.started_at)}</span>
               </p>
               <p className="flex items-baseline gap-2">
-                {/* Counts down to the threshold, then keeps going into minus. Never stops. */}
                 <span
                   className="text-2xl leading-tight font-semibold tabular-nums"
                   style={over ? { color: "var(--pain-max)" } : undefined}
                 >
-                  {limitMs === null ? clock(elapsed) : over ? `-${clock(-remaining!)}` : clock(remaining!)}
+                  {bigClock}
                 </span>
                 {runningType && (
                   <button
                     onClick={() => setEditing(runningType)}
-                    className={`text-xs tabular-nums ${over ? "font-semibold text-[var(--pain-max)]" : "text-muted"} underline decoration-dotted underline-offset-2`}
-                    title="Change the notification threshold"
+                    className={`truncate text-xs tabular-nums ${over ? "font-semibold text-[var(--pain-max)]" : "text-muted"} underline decoration-dotted underline-offset-2`}
+                    title="Change this activity's timers"
                   >
-                    {limitMs === null
-                      ? "counting up · no alert"
-                      : over
-                        ? `past ${runningType.limit_min}m · ${clock(elapsed)} total`
-                        : `of ${runningType.limit_min}m · ${clock(elapsed)} so far`}
+                    {clock(elapsed)} so far
+                    {notifyMs !== null &&
+                      (over ? ` · 🔔 past ${runningType.limit_min}m` : ` · 🔔 in ${clock(leftToNotify!)}`)}
+                    {dueAt !== null && ` · ⏹ ends ${formatTime(tz, dueAt)}`}
+                    {nextLive && ` → ${nextLive.emoji ?? ""} ${nextLive.name}`}
+                    {notifyMs === null && endMs === null && " · no timers"}
                   </button>
                 )}
               </p>
@@ -218,7 +274,7 @@ export function TimerField({
         )}
       </div>
 
-      {limitMs !== null && running && (
+      {hasBar && running && (
         <div className="h-1 overflow-hidden rounded-full bg-surface-2">
           <div
             className="h-full rounded-full transition-[width] duration-1000"
@@ -264,6 +320,7 @@ export function TimerField({
         <TaskEditor
           key={editing === "new" ? "new" : editing.id}
           task={editing === "new" ? null : editing}
+          options={types.filter((t) => !t.archived && t.id !== (editing === "new" ? null : editing.id))}
           pending={pending}
           onSave={(v) => {
             onSaveTask(v);
@@ -280,6 +337,7 @@ export function TimerField({
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
         {tasks.map((t) => {
           const active = running?.type_id === t.id;
+          const follows = byId(t.next_type_id);
           return (
             <button
               key={t.id}
@@ -288,7 +346,13 @@ export function TimerField({
                 e.preventDefault();
                 setEditing(t);
               }}
-              title={`${t.limit_min ? `Notifies after ${t.limit_min} min · ` : ""}right-click to edit`}
+              title={[
+                t.limit_min && `Notifies after ${t.limit_min} min`,
+                t.end_min && `Ends after ${t.end_min} min${follows ? ` and starts ${follows.name}` : ""}`,
+                "right-click to edit",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
               className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition active:scale-95 ${
                 active ? "border-transparent text-white" : "border-line bg-surface hover:bg-surface-2"
               }`}
@@ -299,13 +363,18 @@ export function TimerField({
               {t.limit_min && (
                 <span className={`text-[10px] tabular-nums ${active ? "opacity-80" : "text-muted"}`}>🔔{t.limit_min}m</span>
               )}
+              {t.end_min && (
+                <span className={`text-[10px] tabular-nums ${active ? "opacity-80" : "text-muted"}`}>
+                  ⏹{t.end_min}m{follows ? `→${follows.emoji ?? "▸"}` : ""}
+                </span>
+              )}
             </button>
           );
         })}
         <button
           onClick={() => setEditing(editing === "new" ? null : "new")}
           className="flex shrink-0 items-center gap-1 rounded-xl border border-dashed border-line px-2.5 py-2 text-sm text-muted hover:text-ink"
-          title="Add an activity with its notification threshold"
+          title="Add an activity with its timers"
         >
           ＋ Activity
         </button>
@@ -330,29 +399,43 @@ export function TimerField({
   );
 }
 
-/** Add or edit an activity on the timer line, together with its alert threshold. */
+/** Add or edit an activity on the timer line, together with both of its timers. */
 function TaskEditor({
   task,
+  options,
   pending,
   onSave,
   onRemove,
   onClose,
 }: {
   task: ActionType | null;
+  /** Everything this activity is allowed to hand over to. */
+  options: ActionType[];
   pending: boolean;
-  onSave: (v: { id: string | null; name: string; emoji: string | null; notifyAfterMin: number | null }) => void;
+  onSave: (v: TaskDraft) => void;
   onRemove: (id: string) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(task?.name ?? "");
   const [emoji, setEmoji] = useState(task?.emoji ?? "");
-  // Notifications are opt-in per activity: the toggle enables the minutes field.
+  // Both timers are opt-in per activity: the toggle enables the minutes field.
   const [notify, setNotify] = useState(task?.limit_min != null);
   const [minutes, setMinutes] = useState(task?.limit_min ? String(task.limit_min) : "30");
+  const [autoEnd, setAutoEnd] = useState(task?.end_min != null);
+  const [endMinutes, setEndMinutes] = useState(task?.end_min ? String(task.end_min) : "20");
+  const [next, setNext] = useState(task?.next_type_id ?? "");
 
-  const parsed = !notify || minutes.trim() === "" ? null : Number(minutes);
-  const badMinutes = notify && (parsed === null || !Number.isInteger(parsed) || parsed < 1 || parsed > 600);
-  const canSave = name.trim() !== "" && !badMinutes && !pending;
+  const parse = (on: boolean, raw: string) => (!on || raw.trim() === "" ? null : Number(raw));
+  const bad = (on: boolean, v: number | null) => on && (v === null || !Number.isInteger(v) || v < 1 || v > 600);
+
+  const notifyAfterMin = parse(notify, minutes);
+  const endAfterMin = parse(autoEnd, endMinutes);
+  const badMinutes = bad(notify, notifyAfterMin);
+  const badEnd = bad(autoEnd, endAfterMin);
+  const alertNeverFires =
+    notify && autoEnd && !badMinutes && !badEnd && endAfterMin! <= notifyAfterMin!;
+  const canSave = name.trim() !== "" && !badMinutes && !badEnd && !pending;
+  const nextName = options.find((o) => o.id === next)?.name ?? null;
 
   return (
     <form
@@ -360,7 +443,14 @@ function TaskEditor({
       onSubmit={(e) => {
         e.preventDefault();
         if (canSave) {
-          onSave({ id: task?.id ?? null, name: name.trim(), emoji: emoji.trim() || null, notifyAfterMin: parsed });
+          onSave({
+            id: task?.id ?? null,
+            name: name.trim(),
+            emoji: emoji.trim() || null,
+            notifyAfterMin,
+            endAfterMin,
+            nextTypeId: autoEnd && next !== "" ? next : null,
+          });
         }
       }}
     >
@@ -387,6 +477,7 @@ function TaskEditor({
           aria-label="Activity name"
         />
       </label>
+
       <div className="flex flex-col gap-1">
         <label className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted uppercase">
           <input
@@ -395,7 +486,7 @@ function TaskEditor({
             onChange={(e) => setNotify(e.target.checked)}
             aria-label="Notify me about this activity"
           />
-          Notify after
+          🔔 Notify after
         </label>
         <span className="flex items-center gap-1">
           <input
@@ -410,6 +501,48 @@ function TaskEditor({
             aria-label="Notify after minutes"
           />
           <span className={`text-xs text-muted ${notify ? "" : "opacity-40"}`}>min</span>
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted uppercase">
+          <input
+            type="checkbox"
+            checked={autoEnd}
+            onChange={(e) => setAutoEnd(e.target.checked)}
+            aria-label="End this activity by itself"
+          />
+          ⏹ End after
+        </label>
+        <span className="flex items-center gap-1">
+          <input
+            className={`input w-20 px-2 py-1.5 text-sm ${autoEnd ? "" : "opacity-40"}`}
+            type="number"
+            min={1}
+            max={600}
+            value={autoEnd ? endMinutes : ""}
+            disabled={!autoEnd}
+            onChange={(e) => setEndMinutes(e.target.value)}
+            placeholder="off"
+            aria-label="End after minutes"
+          />
+          <span className={`text-xs text-muted ${autoEnd ? "" : "opacity-40"}`}>min</span>
+          <span className={`text-xs text-muted ${autoEnd ? "" : "opacity-40"}`}>→ then start</span>
+          <select
+            className={`input w-40 px-2 py-1.5 text-sm ${autoEnd ? "" : "opacity-40"}`}
+            value={next}
+            disabled={!autoEnd}
+            onChange={(e) => setNext(e.target.value)}
+            aria-label="Activity to start next"
+          >
+            <option value="">nothing</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.emoji ? `${o.emoji} ` : ""}
+                {o.name}
+              </option>
+            ))}
+          </select>
         </span>
       </div>
 
@@ -432,11 +565,25 @@ function TaskEditor({
           ✕
         </button>
       </div>
-      {badMinutes && <p className="w-full text-xs text-red-600">Notify after must be 1–600 minutes.</p>}
+
+      {(badMinutes || badEnd) && <p className="w-full text-xs text-red-600">Timers must be 1–600 minutes.</p>}
+      {alertNeverFires && (
+        <p className="w-full text-xs text-red-600">
+          It ends at {endMinutes} min, before the alert at {minutes} min — so the alert never fires.
+        </p>
+      )}
       <p className="w-full text-[11px] text-muted">
-        {notify
-          ? "The activity still runs with no limit — this only sends a browser notification (then every 5 min)."
-          : "No notification for this activity — it just runs and logs."}
+        {!notify && !autoEnd
+          ? "No timers — it just runs and logs until you switch."
+          : [
+              notify && "Notify only sends a browser alert (then every 5 min) and keeps counting.",
+              autoEnd &&
+                (nextName
+                  ? `End stops it by itself and starts ${nextName} — needs this tab open.`
+                  : "End stops it by itself — needs this tab open."),
+            ]
+              .filter(Boolean)
+              .join(" ")}
       </p>
     </form>
   );

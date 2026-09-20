@@ -83,17 +83,41 @@ export async function seedDefaults() {
 
 // ---- timer bar -----------------------------------------------------------
 
-/** Notification threshold for one activity on the timer bar (empty = no alert). */
+/** An unchecked box leaves its field out of the form, which reads back as "off". */
+function minutes(fd: FormData, key: string): number | null | "bad" {
+  const raw = str(fd, key);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 600 ? n : "bad";
+}
+
+/**
+ * Both timers for one activity on the bar. They are separate on purpose:
+ * `limit_min` only nudges you, `end_min` actually stops the activity and can
+ * hand over to `next_type_id`.
+ */
 export async function saveTimerSettings(_: FormState, fd: FormData): Promise<FormState> {
   const id = str(fd, "id");
   if (!id) return { error: "Unknown activity." };
-  const raw = str(fd, "limit_min");
-  const minutes = raw === null ? null : Number(raw);
-  if (minutes !== null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 600)) {
-    return { error: "Notify after 1–600 minutes." };
-  }
+
+  const notifyAfter = minutes(fd, "limit_min");
+  if (notifyAfter === "bad") return { error: "Notify after must be 1–600 minutes." };
+  const endAfter = minutes(fd, "end_min");
+  if (endAfter === "bad") return { error: "End after must be 1–600 minutes." };
+
+  // Nothing to hand over to when the activity never ends on its own.
+  const next = endAfter === null ? null : str(fd, "next_type_id");
+  if (next === id) return { error: "An activity cannot follow itself." };
+
   const supabase = await createClient();
-  const { error } = await supabase.from("action_types").update({ limit_min: minutes }).eq("id", id);
+  if (next) {
+    const { data } = await supabase.from("action_types").select("id").eq("id", next).maybeSingle();
+    if (!data) return { error: "That follow-on activity no longer exists." };
+  }
+  const { error } = await supabase
+    .from("action_types")
+    .update({ limit_min: notifyAfter, end_min: endAfter, next_type_id: next })
+    .eq("id", id);
   return finish(error);
 }
 
