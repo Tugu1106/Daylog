@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Action, ActionType } from "@/lib/database.types";
-import { formatTime } from "@/lib/time";
+import { formatDuration, formatTime } from "@/lib/time";
 import { painColor } from "@/components/pain-badge";
 
 const REMIND_EVERY_MS = 5 * 60_000;
 /** How late an end timer may fire and still hand over to the next activity. */
 const CATCH_UP_MS = 5 * 60_000;
+// Longer than this and it was probably left running by mistake.
+const STALE_MS = 12 * 60 * 60_000;
 
 const BASE_TITLE = "Daylog";
 
@@ -78,6 +80,7 @@ export function TimerField({
   onSwitch,
   onStop,
   onAutoEnd,
+  onFixEnd,
   onPain,
   onNotes,
   onSaveTask,
@@ -93,6 +96,8 @@ export function TimerField({
   onStop: () => void;
   /** An end timer ran out: end at `at`, then start `nextTypeId` if there is one. */
   onAutoEnd: (at: number, nextTypeId: string | null) => void;
+  /** Open the form to set the real end time of a forgotten action. */
+  onFixEnd: () => void;
   onPain: (pain: number | null) => void;
   onNotes: (notes: string) => void;
   onSaveTask: (v: TaskDraft) => void;
@@ -200,6 +205,7 @@ export function TimerField({
     };
   }, [running, runningType, bigClock, over]);
 
+  const stale = running !== null && elapsed > STALE_MS;
   // The bar drains as the remaining time runs out, then sits full red.
   const progress =
     endMs !== null && leftToEnd !== null
@@ -273,6 +279,17 @@ export function TimerField({
           </div>
         )}
       </div>
+
+      {stale && running && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-[var(--pain-max)]/10 px-3 py-2 text-sm">
+          <span>
+            <b>{running.name}</b> has been running for {formatDuration(elapsed)} — did you forget to end it?
+          </span>
+          <button onClick={onFixEnd} className="btn-primary ml-auto px-3 py-1.5 text-xs">
+            Fix the end time
+          </button>
+        </div>
+      )}
 
       {hasBar && running && (
         <div className="h-1 overflow-hidden rounded-full bg-surface-2">

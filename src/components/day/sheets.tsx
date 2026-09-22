@@ -329,6 +329,8 @@ export function EndActionSheet({
   const [value, setValue] = useState(() => toDateTimeInput(tz, defaultAt));
   const atMs = fromDateTimeInput(tz, value);
   const startMs = new Date(action.started_at).getTime();
+  // Inputs are minute-precision, so measure presets from a whole minute.
+  const startMinute = Math.floor(startMs / 60_000) * 60_000;
   const tooEarly = atMs !== null && atMs < startMs;
   const future = atMs !== null && atMs > now + 60_000;
 
@@ -346,7 +348,7 @@ export function EndActionSheet({
         <p className="text-sm text-muted">
           Started {toDateTimeInput(tz, action.started_at).replace("T", " at ")} and still running.
         </p>
-        <label>
+        <div>
           <Label>Ended at</Label>
           <input
             type="datetime-local"
@@ -355,7 +357,23 @@ export function EndActionSheet({
             onChange={(e) => setValue(e.target.value)}
             autoFocus
           />
-        </label>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {[15, 30, 60, 120, 240, 480].map((mins) => (
+              <button
+                key={mins}
+                type="button"
+                className="chip text-xs"
+                onClick={() => setValue(toDateTimeInput(tz, startMinute + mins * 60_000))}
+              >
+                +{formatDuration(mins * 60_000)}
+              </button>
+            ))}
+            <button type="button" className="chip text-xs" onClick={() => setValue(toDateTimeInput(tz, now))}>
+              now
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted">Measured from the start.</p>
+        </div>
         {atMs !== null && !tooEarly && !future && (
           <p className="text-xs text-muted">Duration {formatDuration(atMs - startMs)}</p>
         )}

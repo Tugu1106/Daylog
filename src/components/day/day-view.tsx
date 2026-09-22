@@ -217,6 +217,9 @@ export function DayView({
           onSwitch={(type) => ops.switchTask(type, Date.now(), current?.id ?? null)}
           onStop={() => current && ops.endAction(current.id, Date.now())}
           onAutoEnd={autoEnd}
+          onFixEnd={() =>
+            current && setEnding({ id: current.id, at: new Date(current.started_at).getTime() + 3_600_000 })
+          }
           onPain={(pain) => current && ops.setPain(current.id, pain)}
           onNotes={(notes) => current && ops.setNotes(current.id, notes)}
           onSaveTask={(v) => call(() => saveTimerTask(v))}
