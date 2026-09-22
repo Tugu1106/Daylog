@@ -12,6 +12,7 @@ type DayResult = {
   events: Tables<"pain_events">[];
   actionTypes: Tables<"action_types">[];
   painTypes: Tables<"pain_types">[];
+  exercises: Tables<"exercises">[];
 };
 
 /** Everything the day timeline needs for one local day. */
@@ -21,7 +22,7 @@ export async function loadDay(tz: string, day: string, retry = true): Promise<Da
   const end = new Date(endMs).toISOString();
   const supabase = await createClient();
 
-  const [actions, levels, carry, events, actionTypes, painTypes] = await Promise.all([
+  const [actions, levels, carry, events, actionTypes, painTypes, exercises] = await Promise.all([
     supabase
       .from("actions")
       .select("*")
@@ -48,9 +49,10 @@ export async function loadDay(tz: string, day: string, retry = true): Promise<Da
       .order("occurred_at"),
     supabase.from("action_types").select("*").order("sort").order("name"),
     supabase.from("pain_types").select("*").order("sort").order("name"),
+    supabase.from("exercises").select("*").order("sort").order("name"),
   ]);
 
-  const firstError = [actions, levels, carry, events, actionTypes, painTypes].find((r) => r.error)?.error;
+  const firstError = [actions, levels, carry, events, actionTypes, painTypes, exercises].find((r) => r.error)?.error;
   // A token refresh racing with this request can fail once; a retry uses the new cookies.
   if (firstError) {
     if (retry) {
@@ -69,6 +71,7 @@ export async function loadDay(tz: string, day: string, retry = true): Promise<Da
     events: events.data ?? [],
     actionTypes: actionTypes.data ?? [],
     painTypes: painTypes.data ?? [],
+    exercises: exercises.data ?? [],
   };
 }
 

@@ -81,6 +81,71 @@ export async function seedDefaults() {
   revalidatePath("/", "layout");
 }
 
+// ---- exercises -----------------------------------------------------------
+
+function int(fd: FormData, key: string, min: number, max: number) {
+  const raw = str(fd, key);
+  if (raw === null) return { value: null as number | null };
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) return { error: `${key} must be ${min}–${max}.` };
+  return { value: n };
+}
+
+export async function saveExercise(_: FormState, fd: FormData): Promise<FormState> {
+  const id = str(fd, "id");
+  const name = str(fd, "name", 60);
+  if (!name) return { error: "Name is required." };
+
+  const sets = int(fd, "sets", 1, 99);
+  const reps = int(fd, "reps", 1, 999);
+  const rest = int(fd, "rest_sec", 0, 3600);
+  const minutes = int(fd, "duration_min", 1, 600);
+  const bad = [sets, reps, rest, minutes].find((f) => f.error);
+  if (bad?.error) return { error: bad.error };
+
+  const weightRaw = str(fd, "weight_kg");
+  const weight = weightRaw === null ? null : Number(weightRaw);
+  if (weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 9999)) {
+    return { error: "Weight looks wrong." };
+  }
+
+  const row = {
+    name,
+    emoji: str(fd, "emoji", 8),
+    color: color(fd, "#2f5d50"),
+    sets: sets.value,
+    reps: reps.value,
+    weight_kg: weight,
+    rest_sec: rest.value,
+    duration_min: minutes.value,
+    notes: str(fd, "notes", 500),
+  };
+  const supabase = await createClient();
+  const { error } = id
+    ? await supabase.from("exercises").update(row).eq("id", id)
+    : await supabase.from("exercises").insert(row);
+  return finish(error);
+}
+
+export async function deleteExercise(fd: FormData) {
+  const id = str(fd, "id");
+  if (!id) return;
+  const supabase = await createClient();
+  await supabase.from("exercises").delete().eq("id", id);
+  revalidatePath("/", "layout");
+}
+
+export async function setExerciseArchived(fd: FormData) {
+  const id = str(fd, "id");
+  if (!id) return;
+  const supabase = await createClient();
+  await supabase
+    .from("exercises")
+    .update({ archived: str(fd, "archived") === "true" })
+    .eq("id", id);
+  revalidatePath("/", "layout");
+}
+
 // ---- timer bar -----------------------------------------------------------
 
 /** An unchecked box leaves its field out of the form, which reads back as "off". */

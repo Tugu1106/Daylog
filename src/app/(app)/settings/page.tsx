@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getTz } from "@/lib/tz";
 import { seedDefaults } from "./actions";
-import { ActionTypeRow, AddToTimerBar, PainTypeRow, TimerBarRow } from "./forms";
+import { ActionTypeRow, AddToTimerBar, ExerciseRow, PainTypeRow, TimerBarRow } from "./forms";
 
 function Section({
   title,
@@ -24,9 +24,10 @@ function Section({
 export default async function SettingsPage() {
   const tz = await getTz();
   const supabase = await createClient();
-  const [actionTypes, painTypes] = await Promise.all([
+  const [actionTypes, painTypes, exercises] = await Promise.all([
     supabase.from("action_types").select("*").order("archived").order("sort").order("name"),
     supabase.from("pain_types").select("*").order("archived").order("sort").order("name"),
+    supabase.from("exercises").select("*").order("archived").order("sort").order("name"),
   ]);
 
   const actions = actionTypes.data ?? [];
@@ -75,6 +76,16 @@ export default async function SettingsPage() {
           <ActionTypeRow key={t.id} type={t} usedBy={followersOf(t.id)} />
         ))}
         <ActionTypeRow />
+      </Section>
+
+      <Section
+        title="Exercises"
+        hint="Your exercise library with its usual sets, reps, weight and rest. Right-click the timeline to log one — the numbers come prefilled and you adjust what you actually did."
+      >
+        {(exercises.data ?? []).map((e) => (
+          <ExerciseRow key={e.id} exercise={e} />
+        ))}
+        <ExerciseRow />
       </Section>
 
       <Section title="Pain types" hint="Your own pain vocabulary, used for pain events on the timeline.">

@@ -57,6 +57,12 @@ export type Database = {
           pain: number | null;
           notes: string | null;
           created_at: string;
+          /** Set when this action is a logged exercise. */
+          exercise_id: string | null;
+          sets: number | null;
+          reps: number | null;
+          weight_kg: number | null;
+          rest_sec: number | null;
         },
         "name" | "category",
         [
@@ -68,6 +74,25 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ]
+      >;
+      exercises: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          emoji: string | null;
+          color: string;
+          sets: number | null;
+          reps: number | null;
+          weight_kg: number | null;
+          rest_sec: number | null;
+          duration_min: number | null;
+          notes: string | null;
+          archived: boolean;
+          sort: number;
+          created_at: string;
+        },
+        "name"
       >;
       pain_types: Table<
         {
@@ -132,5 +157,6 @@ export type Tables<T extends keyof PublicSchema["Tables"]> = PublicSchema["Table
 export type ActionType = Tables<"action_types">;
 export type Action = Tables<"actions">;
 export type PainType = Tables<"pain_types">;
+export type Exercise = Tables<"exercises">;
 export type PainLevel = Tables<"pain_levels">;
 export type PainEvent = Tables<"pain_events">;

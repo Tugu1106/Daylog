@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Action, ActionType, PainType } from "@/lib/database.types";
+import type { Action, ActionType, Exercise, PainType } from "@/lib/database.types";
 import { formatDuration, formatTime } from "@/lib/time";
 import { painColor } from "@/components/pain-badge";
 import type { ContextRequest } from "./timeline";
@@ -17,6 +17,8 @@ export type MenuHandlers = {
   manual: (from: number, to: number | null) => void;
   /** Open the form to type an end time for a running action. */
   endAt: (actionId: string, at: number) => void;
+  /** Open the form to log an exercise with its sets and reps. */
+  exercise: (exerciseId: string, at: number) => void;
   end: (actionId: string, at: number) => void;
   painLevel: (level: number, at: number) => void;
   painEvent: (typeId: string, at: number, intensity: number | null) => void;
@@ -31,6 +33,7 @@ export function ContextMenu({
   actions,
   actionTypes,
   painTypes,
+  exercises,
   targetLabel,
   onClose,
   handlers,
@@ -41,6 +44,7 @@ export function ContextMenu({
   actions: Action[];
   actionTypes: ActionType[];
   painTypes: PainType[];
+  exercises: Exercise[];
   targetLabel: string | null;
   onClose: () => void;
   handlers: MenuHandlers;
@@ -90,6 +94,7 @@ export function ContextMenu({
   const targetAction = target?.kind === "action" ? actions.find((a) => a.id === target.id) : null;
   const liveTypes = actionTypes.filter((t) => !t.archived);
   const livePain = painTypes.filter((t) => !t.archived);
+  const liveExercises = exercises.filter((e) => !e.archived);
 
   const act = (fn: () => void) => () => {
     fn();
@@ -185,8 +190,8 @@ export function ContextMenu({
             </Section>
           )}
 
-          <Section title={`Start at ${formatTime(tz, at)}`}>
-            {liveTypes.length === 0 && <p className="px-2 py-1 text-xs text-muted">No actions yet — add some in Settings.</p>}
+          <Section title={`Activities · start at ${formatTime(tz, at)}`}>
+            {liveTypes.length === 0 && <p className="px-2 py-1 text-xs text-muted">No activities yet — add some in Settings.</p>}
             <div className="grid grid-cols-2 gap-1">
               {liveTypes.map((t) => (
                 <button
@@ -208,7 +213,29 @@ export function ContextMenu({
             <Item onClick={act(() => handlers.manual(at, null))}>Type start &amp; end times…</Item>
           </Section>
 
-          <Section title="Pain">
+          <Section title="Exercises">
+            {liveExercises.length === 0 && (
+              <p className="px-2 py-1 text-xs text-muted">No exercises yet — add them in Settings.</p>
+            )}
+            {liveExercises.map((e) => (
+              <Item key={e.id} onClick={act(() => handlers.exercise(e.id, at))}>
+                <span
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-sm"
+                  style={{ background: `${e.color}33` }}
+                >
+                  {e.emoji ?? "🏋️"}
+                </span>
+                <span className="truncate">{e.name}</span>
+                <span className="ml-auto shrink-0 text-xs text-muted tabular-nums">
+                  {[e.sets && e.reps ? `${e.sets}×${e.reps}` : null, e.weight_kg ? `${e.weight_kg}kg` : null]
+                    .filter(Boolean)
+                    .join(" ")}
+                </span>
+              </Item>
+            ))}
+          </Section>
+
+          <Section title="Pain events">
             <Item onClick={() => setStep({ kind: "level" })}>
               <span className="h-2.5 w-6 shrink-0 rounded-full bg-gradient-to-r from-[var(--pain-low)] to-[var(--pain-max)]" />
               Set pain level…

@@ -15,21 +15,23 @@ Personal day timeline for back pain. Log what you do (with start/end), how your 
   - **Two ways to log an action**
     - *Live*: **▶ Start** → pick the action → it runs until you press **End** (header chip, or right-click → End here)
     - *With stamps*: **drag across the timeline** to select a range, then pick the action — or **+ Add…** to type start and end in a form (best on a phone, where dragging pans)
-  - **Right-click / long-press** anywhere on the timeline: start an action at that time, end a running one **here or at a time you type** (for actions you forgot to end), set pain level, or add a pain event. Click a block to edit start/end, effort, pain and notes
+  - **Day stepper** in the sky header: ‹ yesterday / Today, so a past day is one click away without leaving the page
+  - **Right-click / long-press** anywhere on the timeline, in three groups — **Activities**, **Exercises** (prefilled sets/reps/weight/rest, adjust what you did) and **Pain events**: start an action at that time, end a running one **here or at a time you type** (for actions you forgot to end), set pain level, or add a pain event. Click a block to edit start/end, effort, pain and notes
   - **Timer field** (replaces a pomodoro app): tap a task to start it — it ends the previous one and logs straight to the timeline. With a threshold the timer counts **down** (30:00 → 00:00) and then straight into minus (-02:22) — it never stops; without one it counts **up** from zero. Notifications are opt-in per activity: tick **Notify after** to enable the minutes field; left off, the activity just runs and logs (browser notification + beep + the panel turns red, repeating every 5 min). The **browser tab title** shows the live countdown (`29:58 · 🪑 Sitting`, or `⏰ +02:08 · 🚶 Walk` once over), so you can read it without switching back to the tab. The running task also takes a **pain 0–10** and a note, so you can record "sitting = 7, walking = 3"
   - **Left running by mistake**: an action running longer than 12 h shows a warning on the timer bar with **Fix the end time**, which opens the end form with +15m … +8h presets measured from the start
   - **Erase day** (trash icon above the timeline): deletes every action, pain reading and pain event of that day after a yes/no confirmation
   - At midnight the page rolls over to a fresh, empty day
 - **All days** (`/days`) — **7d**: seven tall day columns with stats · **30d**: a calendar (7 weekday columns, Monday first) where each square shows that day's actions across 00→24 and its pain bar · **90d**: three 30-day calendar cards in one row. Hover a day for its summary; click to open it (`/day/YYYY-MM-DD`)
-- **Settings** (`/settings`) — **Timer bar**: which activities are on it, their order and their notification thresholds · **Actions**: define everything you can log — emoji, colour, name, with edit, archive and delete · **Pain types** · **This device**: timezone and alerts. The old `/types` URL redirects here
+- **Settings** (`/settings`) — **Timer bar**: which activities are on it, their order and their notification thresholds · **Actions**: define everything you can log — emoji, colour, name, with edit, archive and delete · **Exercises**: the library with sets, reps, weight, rest and cues · **Pain types** · **This device**: timezone and alerts. The old `/types` URL redirects here
 
 ## Data model
 
 | Table | What |
 |---|---|
 | `action_types` | Your action vocabulary: name, emoji, color, `timer` (on the timer bar), `limit_min` (notify after N minutes), `sort` |
-| `actions` | Things you did: `started_at`, `ended_at` (null = still running), effort, **pain during it**, notes |
+| `actions` | Things you did: `started_at`, `ended_at` (null = still running), effort, **pain during it**, notes; exercises also carry `exercise_id`, sets, reps, `weight_kg`, `rest_sec` |
 | `pain_types` | Your pain vocabulary: name, color |
+| `exercises` | Your exercise library: name, emoji, colour, usual sets, reps, weight, rest, minutes, cues |
 | `pain_levels` | Pain readings (0–10). Each holds until the next → a continuous line |
 | `pain_events` | One-off pain moments of a given type, with intensity |
 

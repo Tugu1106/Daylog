@@ -2,15 +2,18 @@
 
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import type { ActionType, PainType } from "@/lib/database.types";
+import type { ActionType, Exercise, PainType } from "@/lib/database.types";
 import { Sheet } from "@/components/dialog";
 import {
   addToTimerBar,
   deleteType,
   moveTimerTask,
   removeFromTimerBar,
+  deleteExercise,
   saveActionType,
+  saveExercise,
   savePainType,
+  setExerciseArchived,
   saveTimerSettings,
   setArchived,
   type FormState,
@@ -483,6 +486,89 @@ export function PainTypeRow({ type }: { type?: PainType }) {
         <Status state={state} pending={pending} />
       </form>
       {type && <RowButtons table="pain_types" id={type.id} name={type.name} archived={type.archived} />}
+    </div>
+  );
+}
+
+// ---- exercises -----------------------------------------------------------
+
+/** One exercise in the library: what it is and the sets you usually do. */
+export function ExerciseRow({ exercise }: { exercise?: Exercise }) {
+  const [state, action, pending] = useActionState(saveExercise, undefined);
+  const [color, setColor] = useState(exercise?.color ?? "#2f5d50");
+  const [confirming, setConfirming] = useState(false);
+  const isNew = !exercise;
+  const n = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
+
+  return (
+    <div className={`flex flex-wrap items-center gap-2 py-2 ${exercise?.archived ? "opacity-50" : ""}`}>
+      <form action={action} className="flex flex-1 flex-wrap items-center gap-2" key={isNew ? state?.ok : undefined}>
+        {exercise && <input type="hidden" name="id" value={exercise.id} />}
+        <input
+          type="color"
+          name="color"
+          value={color}
+          onChange={(e) => setColor(e.target.value)}
+          className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-line bg-transparent"
+          aria-label="Color"
+        />
+        <input
+          name="emoji"
+          defaultValue={exercise?.emoji ?? ""}
+          placeholder="🏋️"
+          maxLength={8}
+          className="input w-14 px-2 text-center"
+          aria-label="Emoji"
+        />
+        <input
+          name="name"
+          defaultValue={exercise?.name ?? ""}
+          placeholder={isNew ? "New exercise, e.g. Bird dog" : ""}
+          required
+          maxLength={60}
+          className="input min-w-36 flex-1"
+          aria-label="Exercise name"
+        />
+        <input name="sets" type="number" min={1} max={99} defaultValue={n(exercise?.sets)} placeholder="sets" className="input w-16 px-2" aria-label="Sets" />
+        <input name="reps" type="number" min={1} max={999} defaultValue={n(exercise?.reps)} placeholder="reps" className="input w-16 px-2" aria-label="Reps" />
+        <input name="weight_kg" type="number" min={0} step="0.5" defaultValue={n(exercise?.weight_kg)} placeholder="kg" className="input w-16 px-2" aria-label="Weight in kg" />
+        <input name="rest_sec" type="number" min={0} max={3600} defaultValue={n(exercise?.rest_sec)} placeholder="rest s" className="input w-20 px-2" aria-label="Rest in seconds" />
+        <input name="duration_min" type="number" min={1} max={600} defaultValue={n(exercise?.duration_min)} placeholder="min" className="input w-16 px-2" aria-label="Usual minutes" />
+        <input
+          name="notes"
+          defaultValue={exercise?.notes ?? ""}
+          placeholder="cues"
+          maxLength={500}
+          className="input min-w-32 flex-1"
+          aria-label="Notes"
+        />
+        <button className={isNew ? "btn-primary px-3 py-2 text-sm" : "btn-ghost"} disabled={pending}>
+          {isNew ? "Add" : "Save"}
+        </button>
+        <Status state={state} pending={pending} />
+      </form>
+      {exercise && (
+        <div className="flex shrink-0 items-center gap-2">
+          <form action={setExerciseArchived}>
+            <input type="hidden" name="id" value={exercise.id} />
+            <input type="hidden" name="archived" value={String(!exercise.archived)} />
+            <button className="text-xs text-muted hover:text-ink">{exercise.archived ? "Restore" : "Archive"}</button>
+          </form>
+          {confirming ? (
+            <form action={deleteExercise} className="flex items-center gap-1">
+              <input type="hidden" name="id" value={exercise.id} />
+              <button className="text-xs font-semibold text-red-600">Delete {exercise.name}?</button>
+              <button type="button" className="text-xs text-muted" onClick={() => setConfirming(false)}>
+                no
+              </button>
+            </form>
+          ) : (
+            <button className="text-xs text-muted hover:text-red-600" onClick={() => setConfirming(true)}>
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

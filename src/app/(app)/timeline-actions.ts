@@ -355,3 +355,60 @@ export async function removeTimerTask(id: string): Promise<Result> {
   const supabase = await createClient();
   return done((await supabase.from("action_types").update({ timer: false }).eq("id", id)).error);
 }
+
+// ---- exercises -----------------------------------------------------------
+
+/** Log one exercise on the timeline, with the set details you did. */
+export async function logExercise(input: {
+  id: string;
+  exerciseId: string;
+  name: string;
+  color: string;
+  at: number;
+  endAt: number | null;
+  sets: number | null;
+  reps: number | null;
+  weightKg: number | null;
+  restSec: number | null;
+  effort: number | null;
+  pain: number | null;
+  notes: string | null;
+}): Promise<Result> {
+  const name = cleanName(input.name);
+  if (!isId(input.id) || !isId(input.exerciseId) || !name) return { error: "Unknown exercise." };
+  const startedAt = toIso(input.at);
+  if (!startedAt) return FUTURE;
+  let endedAt: string | null = null;
+  if (input.endAt !== null) {
+    endedAt = toIso(input.endAt);
+    if (!endedAt) return FUTURE;
+    if (input.endAt < input.at) return { error: "End time is before the start." };
+  }
+  if (input.sets !== null && !isInt(input.sets, 0, 99)) return { error: "Sets is 0–99." };
+  if (input.reps !== null && !isInt(input.reps, 0, 999)) return { error: "Reps is 0–999." };
+  if (input.restSec !== null && !isInt(input.restSec, 0, 3600)) return { error: "Rest is 0–3600 seconds." };
+  if (input.effort !== null && !isInt(input.effort, 1, 10)) return { error: "Effort is 1–10." };
+  if (input.pain !== null && !isInt(input.pain, 0, 10)) return { error: "Pain is 0–10." };
+  if (input.weightKg !== null && (!Number.isFinite(input.weightKg) || input.weightKg < 0 || input.weightKg > 9999)) {
+    return { error: "Weight looks wrong." };
+  }
+
+  const supabase = await createClient();
+  const res = await supabase.from("actions").insert({
+    id: input.id,
+    exercise_id: input.exerciseId,
+    name,
+    category: "exercise",
+    color: COLOR.test(input.color) ? input.color : "#2f5d50",
+    started_at: startedAt,
+    ended_at: endedAt,
+    sets: input.sets,
+    reps: input.reps,
+    weight_kg: input.weightKg,
+    rest_sec: input.restSec,
+    effort: input.effort,
+    pain: input.pain,
+    notes: cleanNotes(input.notes),
+  });
+  return done(res.error);
+}

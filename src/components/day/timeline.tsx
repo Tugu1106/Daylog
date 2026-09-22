@@ -39,7 +39,7 @@ export function Timeline({
   lanes: ClippedAction[][];
   events: PainEvent[];
   painPoints: PainPoint[];
-  emojiFor: (typeId: string | null) => string | null;
+  emojiFor: (a: ClippedAction) => string | null;
   /** How many hours fit in the visible width. */
   viewHours: number;
   onViewHoursChange: (hours: number) => void;
@@ -362,7 +362,7 @@ export function Timeline({
             {lanes.map((lane, i) => (
               <div key={i} className="relative min-h-8 flex-1" style={{ maxHeight: "3.75rem" }}>
                 {lane.map((a) => (
-                  <ActionBlock key={a.id} tz={tz} a={a} day={day} emoji={emojiFor(a.type_id)} />
+                  <ActionBlock key={a.id} tz={tz} a={a} day={day} emoji={emojiFor(a)} />
                 ))}
               </div>
             ))}
@@ -605,7 +605,15 @@ function ActionBlock({
       type="button"
       data-kind="action"
       data-id={a.id}
-      title={`${label} · ${formatTime(tz, a.started_at)}–${a.active ? "now" : formatTime(tz, a.ended_at!)} · ${formatDuration(duration)}`}
+      title={[
+        `${label} · ${formatTime(tz, a.started_at)}–${a.active ? "now" : formatTime(tz, a.ended_at!)} · ${formatDuration(duration)}`,
+        a.sets && a.reps ? `${a.sets}×${a.reps}${a.weight_kg ? ` @ ${a.weight_kg}kg` : ""}` : null,
+        a.rest_sec ? `${a.rest_sec}s rest` : null,
+        a.pain !== null ? `pain ${a.pain}` : null,
+        a.notes,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       className={`absolute inset-y-0 flex items-center overflow-hidden rounded-lg px-1.5 text-left text-xs font-medium text-white shadow-sm ${
         a.active ? "action-active" : ""
       }`}

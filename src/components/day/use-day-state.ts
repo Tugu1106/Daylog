@@ -2,7 +2,7 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import type { DayData } from "@/lib/day-data";
-import type { Action, ActionType, PainEvent, PainType } from "@/lib/database.types";
+import type { Action, ActionType, Exercise, PainEvent, PainType } from "@/lib/database.types";
 import {
   addAction,
   addPainEvent,
@@ -12,6 +12,7 @@ import {
   deletePainLevel,
   clearDay,
   endAction,
+  logExercise,
   setActionNotes,
   setActionPain,
   switchTask,
@@ -104,6 +105,11 @@ export function useDayState(data: DayData) {
         pain: extra.pain ?? null,
         notes: extra.notes ?? null,
         created_at: iso(Date.now()),
+        exercise_id: null,
+        sets: null,
+        reps: null,
+        weight_kg: null,
+        rest_sec: null,
       };
       mutate({ kind: "addAction", row }, () =>
         addAction({
@@ -136,6 +142,11 @@ export function useDayState(data: DayData) {
         pain: null,
         notes: null,
         created_at: iso(Date.now()),
+        exercise_id: null,
+        sets: null,
+        reps: null,
+        weight_kg: null,
+        rest_sec: null,
       };
       startTransition(async () => {
         if (endId) apply({ kind: "patchAction", id: endId, patch: { ended_at: iso(at) } });
@@ -157,6 +168,45 @@ export function useDayState(data: DayData) {
     },
     setNotes(id: string, notes: string | null) {
       mutate({ kind: "patchAction", id, patch: { notes } }, () => setActionNotes({ id, notes }));
+    },
+    /** Log an exercise from the library with the sets you actually did. */
+    logExercise(
+      exercise: Exercise,
+      at: number,
+      endAt: number | null,
+      v: {
+        sets: number | null;
+        reps: number | null;
+        weightKg: number | null;
+        restSec: number | null;
+        effort: number | null;
+        pain: number | null;
+        notes: string | null;
+      },
+    ) {
+      const id = crypto.randomUUID();
+      const row: Action = {
+        id,
+        user_id: "",
+        type_id: null,
+        name: exercise.name,
+        category: "exercise",
+        color: exercise.color,
+        started_at: iso(at),
+        ended_at: endAt === null ? null : iso(endAt),
+        effort: v.effort,
+        pain: v.pain,
+        notes: v.notes,
+        created_at: iso(Date.now()),
+        exercise_id: exercise.id,
+        sets: v.sets,
+        reps: v.reps,
+        weight_kg: v.weightKg,
+        rest_sec: v.restSec,
+      };
+      mutate({ kind: "addAction", row }, () =>
+        logExercise({ id, exerciseId: exercise.id, name: exercise.name, color: exercise.color, at, endAt, ...v }),
+      );
     },
     endAction(id: string, at: number) {
       mutate({ kind: "patchAction", id, patch: { ended_at: iso(at) } }, () => endAction({ id, at }));

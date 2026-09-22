@@ -12,7 +12,7 @@ import { Sky } from "./sky";
 import { Timeline, type ContextRequest, type Target } from "./timeline";
 import { saveViewHours } from "@/lib/view";
 import { ContextMenu, type MenuHandlers } from "./context-menu";
-import { ActionSheet, EndActionSheet, NewActionSheet, PainEventSheet } from "./sheets";
+import { ActionSheet, EndActionSheet, ExerciseSheet, NewActionSheet, PainEventSheet } from "./sheets";
 import { ConfirmDialog } from "@/components/dialog";
 import { PainBar } from "./pain-bar";
 import { TimerField } from "./timer-field";
@@ -46,6 +46,8 @@ export function DayView({
   const [confirmClear, setConfirmClear] = useState(false);
   // Ending a forgotten action at a time typed by hand.
   const [ending, setEnding] = useState<{ id: string; at: number } | null>(null);
+  // Logging an exercise from the library at a given time.
+  const [loggingExercise, setLoggingExercise] = useState<{ id: string; at: number } | null>(null);
   const { entries, ops, call, pending, error, clearError } = useDayState(data);
 
   const router = useRouter();
@@ -91,7 +93,15 @@ export function DayView({
   );
   const painPoints: PainPoint[] = useMemo(() => painSeries(levels, span), [levels, span]);
   const typeById = useMemo(() => new Map(data.actionTypes.map((t) => [t.id, t])), [data.actionTypes]);
-  const emojiFor = useCallback((id: string | null) => (id ? typeById.get(id)?.emoji ?? null : null), [typeById]);
+  const exerciseById = useMemo(() => new Map(data.exercises.map((e) => [e.id, e])), [data.exercises]);
+  // Actions carry either a type (activities) or an exercise; both can have an emoji.
+  const emojiFor = useCallback(
+    (a: { type_id: string | null; exercise_id?: string | null }) =>
+      (a.type_id ? typeById.get(a.type_id)?.emoji : null) ??
+      (a.exercise_id ? exerciseById.get(a.exercise_id)?.emoji ?? "🏋️" : null) ??
+      null,
+    [typeById, exerciseById],
+  );
   const running = actions.filter((a) => a.ended_at === null);
   // The timer field follows the most recently started running action.
   const current = running.length
@@ -127,6 +137,7 @@ export function DayView({
     },
     manual: (from, to) => setManual({ from, to }),
     endAt: (actionId, at) => setEnding({ id: actionId, at }),
+    exercise: (exerciseId, at) => setLoggingExercise({ id: exerciseId, at }),
     end: (id, at) => ops.endAction(id, at),
     painLevel: (level, at) => ops.addLevel(level, at),
     painEvent: (typeId, at, intensity) => {
@@ -141,7 +152,7 @@ export function DayView({
     if (!t) return null;
     if (t.kind === "action") {
       const a = actions.find((x) => x.id === t.id);
-      return a ? `${emojiFor(a.type_id) ?? ""} ${a.name} · ${formatTime(tz, a.started_at)}–${a.ended_at ? formatTime(tz, a.ended_at) : "now"}` : null;
+      return a ? `${emojiFor(a) ?? ""} ${a.name} · ${formatTime(tz, a.started_at)}–${a.ended_at ? formatTime(tz, a.ended_at) : "now"}` : null;
     }
     if (t.kind === "event") {
       const e = events.find((x) => x.id === t.id);
@@ -160,6 +171,7 @@ export function DayView({
   const sheetEvent = sheet?.kind === "event" ? events.find((e) => e.id === sheet.id) : null;
 
   const skyMinute = isToday ? minutesOfDay(tz, new Date(now)) : 13 * 60;
+  const todayKey = localDay(tz, new Date(now));
   const prevDay = addDays(data.day, -1);
   const nextDay = addDays(data.day, 1);
 
@@ -183,7 +195,7 @@ export function DayView({
                 running.map((a) => (
                   <span key={a.id} className="flex items-center gap-2 rounded-full bg-black/20 py-1 pr-1 pl-3 text-sm backdrop-blur">
                     <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: a.color }} />
-                    {emojiFor(a.type_id)} {a.name}
+                    {emojiFor(a)} {a.name}
                     <span className="tabular-nums opacity-80">{formatDuration(now - new Date(a.started_at).getTime())}</span>
                     <button
                       onClick={() => ops.endAction(a.id, Date.now())}
@@ -194,13 +206,30 @@ export function DayView({
                   </span>
                 ))
               )
+            ) : null}
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+            <Link
+              href={`/day/${prevDay}`}
+              className="rounded-full bg-black/20 px-2.5 py-1 backdrop-blur hover:bg-black/30"
+              title="Previous day"
+            >
+              ‹ {formatDay(prevDay)}
+            </Link>
+            {isToday ? (
+              <span className="rounded-full bg-white/80 px-2.5 py-1 font-semibold text-black">Today</span>
             ) : (
               <>
-                <Link href={`/day/${prevDay}`} className="rounded-full bg-black/15 px-3 py-1 text-xs backdrop-blur">
-                  ← {formatDay(prevDay)}
+                <Link
+                  href={nextDay >= todayKey ? "/" : `/day/${nextDay}`}
+                  className="rounded-full bg-black/20 px-2.5 py-1 backdrop-blur hover:bg-black/30"
+                  title="Next day"
+                >
+                  {formatDay(nextDay)} ›
                 </Link>
-                <Link href={`/day/${nextDay}`} className="rounded-full bg-black/15 px-3 py-1 text-xs backdrop-blur">
-                  {formatDay(nextDay)} →
+                <Link href="/" className="rounded-full bg-white/80 px-2.5 py-1 font-semibold text-black">
+                  Today
                 </Link>
               </>
             )}
@@ -296,6 +325,7 @@ export function DayView({
           actions={actions}
           actionTypes={data.actionTypes}
           painTypes={data.painTypes}
+          exercises={data.exercises}
           targetLabel={targetLabel(menu.target)}
           onClose={closeMenu}
           handlers={handlers}
@@ -307,7 +337,7 @@ export function DayView({
           key={sheetAction.id}
           tz={tz}
           action={sheetAction}
-          emoji={emojiFor(sheetAction.type_id)}
+          emoji={emojiFor(sheetAction)}
           pending={pending}
           onClose={closeSheet}
           onSave={(v) => {
@@ -348,7 +378,7 @@ export function DayView({
               key={a.id}
               tz={tz}
               action={a}
-              emoji={emojiFor(a.type_id)}
+              emoji={emojiFor(a)}
               defaultAt={Math.max(ending.at, new Date(a.started_at).getTime())}
               now={now}
               pending={pending}
@@ -356,6 +386,27 @@ export function DayView({
               onEnd={(at) => {
                 ops.endAction(a.id, at);
                 setEnding(null);
+              }}
+            />
+          );
+        })()}
+
+      {loggingExercise &&
+        (() => {
+          const ex = data.exercises.find((e) => e.id === loggingExercise.id);
+          if (!ex) return null;
+          return (
+            <ExerciseSheet
+              key={ex.id}
+              tz={tz}
+              exercise={ex}
+              at={loggingExercise.at}
+              now={now}
+              pending={pending}
+              onClose={() => setLoggingExercise(null)}
+              onLog={(from, to, v) => {
+                ops.logExercise(ex, from, to, v);
+                setLoggingExercise(null);
               }}
             />
           );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Action, ActionType, PainEvent } from "@/lib/database.types";
+import type { Action, ActionType, Exercise, PainEvent } from "@/lib/database.types";
 import { formatDuration, fromDateTimeInput, toDateTimeInput } from "@/lib/time";
 import { ScaleGrid } from "./context-menu";
 import { Sheet } from "@/components/dialog";
@@ -385,6 +385,159 @@ export function EndActionSheet({
           onClick={() => onEnd(atMs!)}
         >
           {pending ? "Saving…" : "End it"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Log one exercise: its sets and reps, prefilled from your library. */
+export function ExerciseSheet({
+  tz,
+  exercise,
+  at,
+  now,
+  pending,
+  onClose,
+  onLog,
+}: {
+  tz: string;
+  exercise: Exercise;
+  /** Where you right-clicked, used as the start. */
+  at: number;
+  now: number;
+  pending: boolean;
+  onClose: () => void;
+  onLog: (
+    from: number,
+    to: number | null,
+    v: {
+      sets: number | null;
+      reps: number | null;
+      weightKg: number | null;
+      restSec: number | null;
+      effort: number | null;
+      pain: number | null;
+      notes: string | null;
+    },
+  ) => void;
+}) {
+  const [start, setStart] = useState(() => toDateTimeInput(tz, at));
+  const [minutes, setMinutes] = useState(String(exercise.duration_min ?? 10));
+  const [sets, setSets] = useState(exercise.sets?.toString() ?? "");
+  const [reps, setReps] = useState(exercise.reps?.toString() ?? "");
+  const [weight, setWeight] = useState(exercise.weight_kg?.toString() ?? "");
+  const [rest, setRest] = useState(exercise.rest_sec?.toString() ?? "");
+  const [effort, setEffort] = useState<number | null>(null);
+  const [pain, setPain] = useState<number | null>(null);
+  const [notes, setNotes] = useState("");
+
+  const num = (v: string) => (v.trim() === "" ? null : Number(v));
+  const startMs = fromDateTimeInput(tz, start);
+  const mins = num(minutes);
+  const endMs = startMs !== null && mins !== null && mins > 0 ? startMs + mins * 60_000 : null;
+  const future = endMs !== null && endMs > now + 60_000;
+  const invalid = startMs === null || mins === null || mins <= 0 || future;
+
+  return (
+    <Sheet
+      onClose={onClose}
+      title={
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-sm" style={{ background: exercise.color }} />
+          {exercise.emoji ?? "🏋️"} {exercise.name}
+        </span>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {exercise.notes && <p className="text-sm text-muted">{exercise.notes}</p>}
+
+        <div className="grid grid-cols-2 gap-3">
+          <label>
+            <Label>Started</Label>
+            <input type="datetime-local" className="input" value={start} onChange={(e) => setStart(e.target.value)} />
+          </label>
+          <label>
+            <Label>Took (min)</Label>
+            <input
+              type="number"
+              min={1}
+              max={600}
+              className="input"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2">
+          <label>
+            <Label>Sets</Label>
+            <input type="number" min={0} max={99} className="input px-2" value={sets} onChange={(e) => setSets(e.target.value)} />
+          </label>
+          <label>
+            <Label>Reps</Label>
+            <input type="number" min={0} max={999} className="input px-2" value={reps} onChange={(e) => setReps(e.target.value)} />
+          </label>
+          <label>
+            <Label>Kg</Label>
+            <input type="number" min={0} step="0.5" className="input px-2" value={weight} onChange={(e) => setWeight(e.target.value)} />
+          </label>
+          <label>
+            <Label>Rest s</Label>
+            <input type="number" min={0} max={3600} className="input px-2" value={rest} onChange={(e) => setRest(e.target.value)} />
+          </label>
+        </div>
+
+        <div>
+          <Label>Effort {effort !== null && `· ${effort}/10`}</Label>
+          <div className="grid grid-cols-10 gap-1">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setEffort(effort === n ? null : n)}
+                className={`h-9 rounded-lg text-sm font-semibold ${effort === n ? "chip-on" : "bg-surface-2"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Label>Pain during it {pain !== null && `· ${pain}/10`}</Label>
+          <ScaleGrid value={pain} onPick={(n) => setPain(pain === n ? null : n)} />
+        </div>
+
+        <label>
+          <Label>Notes</Label>
+          <textarea className="input min-h-16" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </label>
+
+        {endMs !== null && !future && (
+          <p className="text-xs text-muted">
+            {formatDuration(endMs - startMs!)} · ends {toDateTimeInput(tz, endMs).slice(11)}
+          </p>
+        )}
+        {future && <p className="text-xs text-red-600">That would end in the future.</p>}
+
+        <button
+          className="btn-primary"
+          disabled={pending || invalid}
+          onClick={() =>
+            onLog(startMs!, endMs, {
+              sets: num(sets),
+              reps: num(reps),
+              weightKg: num(weight),
+              restSec: num(rest),
+              effort,
+              pain,
+              notes,
+            })
+          }
+        >
+          {pending ? "Saving…" : "Log exercise"}
         </button>
       </div>
     </Sheet>
